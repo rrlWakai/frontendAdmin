@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+  <defs>
+    <linearGradient id="campusGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#350011;stop-opacity:0.95" />
+      <stop offset="100%" style="stop-color:#500019;stop-opacity:0.85" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="600" fill="url(#campusGradient)" />
+  <!-- Campus building silhouette -->
+  <g fill="#ffffff" opacity="0.15">
+    <!-- Main building -->
+    <path d="M200 400 L200 250 L300 200 L400 250 L400 400 Z" />
+    <path d="M420 400 L420 230 L520 180 L620 230 L620 400 Z" />
+    <path d="M640 400 L640 270 L740 220 L840 270 L840 400 Z" />
+    <!-- Side wing -->
+    <path d="M860 400 L860 320 L1000 320 L1000 400 Z" />
+    <!-- Tower -->
+    <path d="M500 200 L500 120 L520 100 L540 120 L540 200 Z" />
+    <!-- Windows -->
+    <rect x="230" y="270" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="260" y="270" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="450" y="250" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="480" y="250" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="670" y="290" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="700" y="290" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="730" y="290" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="890" y="340" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="920" y="340" width="12" height="18" fill="#ffffff" opacity="0.6" />
+    <rect x="950" y="340" width="12" height="18" fill="#ffffff" opacity="0.6" />
+  </g>
+  <!-- Ground line -->
+  <path d="M0 420 Q600 430 1200 420" stroke="#ffffff" stroke-width="2" opacity="0.3" fill="none" />
+  <!-- Decorative gold accent -->
+  <path d="M0 440 Q600 380 1200 440" stroke="#f5b900" stroke-width="3" opacity="0.6" fill="none" />
+</svg>
