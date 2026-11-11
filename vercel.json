@@ -1,3 +1,7 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://backendccsync.onrender.com/api/:path*" },
+    { "source": "/sanctum/:path*", "destination": "https://backendccsync.onrender.com/sanctum/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
