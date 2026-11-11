@@ -79,22 +79,19 @@ export function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [
-          studentsResult,
-          facultyResult,
-          schedulesResult,
-          conflictsResult,
-          academicOptions,
-        ] = await Promise.allSettled([
-          fetchStudents({ per_page: 1 }),
-          fetchFaculty({ per_page: 1 }),
-          fetchSchedules({
-            academic_term_id: 0,
-            status: "published",
-            per_page: 1,
-          }),
-          fetchScheduleConflicts(0),
-          fetchAcademicOptions(),
+        const academicOptions = await fetchAcademicOptions();
+
+        if (!active) return;
+
+        setTerms(academicOptions.terms);
+
+        const currentAcademicTerm =
+          academicOptions.terms.find((term) => term.is_current) ??
+          academicOptions.terms[0];
+
+        const [studentsResult, facultyResult] = await Promise.allSettled([
+          fetchStudents({ per_page: 10 }),
+          fetchFaculty({ per_page: 10 }),
         ]);
 
         if (!active) return;
@@ -111,20 +108,31 @@ export function DashboardPage() {
             faculty: facultyResult.value.pagination.total,
           }));
         }
-        if (schedulesResult.status === "fulfilled") {
-          setStats((s) => ({
-            ...s,
-            schedules: schedulesResult.value.pagination.total,
-          }));
-        }
-        if (conflictsResult.status === "fulfilled") {
-          setStats((s) => ({
-            ...s,
-            conflicts: conflictsResult.value.conflicts.length,
-          }));
-        }
-        if (academicOptions.status === "fulfilled") {
-          setTerms(academicOptions.value.terms);
+
+        if (currentAcademicTerm) {
+          const [schedulesResult, conflictsResult] = await Promise.allSettled([
+            fetchSchedules({
+              academic_term_id: currentAcademicTerm.id,
+              status: "published",
+              per_page: 10,
+            }),
+            fetchScheduleConflicts(currentAcademicTerm.id),
+          ]);
+
+          if (!active) return;
+
+          if (schedulesResult.status === "fulfilled") {
+            setStats((s) => ({
+              ...s,
+              schedules: schedulesResult.value.pagination.total,
+            }));
+          }
+          if (conflictsResult.status === "fulfilled") {
+            setStats((s) => ({
+              ...s,
+              conflicts: conflictsResult.value.conflicts.length,
+            }));
+          }
         }
       } catch {
         if (active) setError("Unable to load dashboard data.");
