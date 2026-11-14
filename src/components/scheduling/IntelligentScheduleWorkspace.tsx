@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, CircleHelp, Clock3, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  LockKeyhole,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
-import { DevelopmentCandidatePreview } from '@/components/scheduling/DevelopmentCandidatePreview'
+import { EmptyState } from '@/components/common/EmptyState'
 import { fetchProfessor } from '@/services/api/faculty'
 import { fetchOfferingFacultyAssignments, fetchSchedules } from '@/services/api/scheduling'
 import type { AcademicTerm } from '@/types/academic'
@@ -14,8 +25,13 @@ import type {
   SchedulingOptions,
 } from '@/types/scheduling'
 import { getApiErrorMessage } from '@/utils/apiError'
+import { cn } from '@/utils/cn'
 
-type ReadinessState = 'ready' | 'warning' | 'blocked' | 'info' | 'checking'
+type WorkspaceStage = 'overview' | 'generation' | 'review' | 'approval'
+type ReadinessState = 'ready' | 'warning' | 'blocked' | 'checking' | 'info'
+type BadgeTone = 'neutral' | 'success' | 'warning' | 'info' | 'danger'
+
+const GENERATION_SERVICE_CONNECTED = false
 
 interface AssignmentReadiness {
   checkedSignature: string
@@ -43,7 +59,25 @@ interface IntelligentScheduleWorkspaceProps {
   term: AcademicTerm | undefined
   options: SchedulingOptions | null
   optionsLoading: boolean
+  loadError?: string | null
   conflicts: ScheduleConflictRecord[]
+}
+
+interface ReadinessCheck {
+  title: string
+  detail: string
+  state: ReadinessState
+  link?: { to: string; label: string }
+  action?: 'check-assignments'
+  actionLabel?: string
+}
+
+interface ReadinessCategory {
+  id: string
+  title: string
+  summary: string
+  checks: ReadinessCheck[]
+  extra?: ReactNode
 }
 
 async function fetchTermSchedules(termId: number): Promise<ScheduleRecord[]> {
@@ -92,15 +126,41 @@ function formatScheduleDay(day: number): string {
   return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][day - 1] ?? 'Unknown day'
 }
 
+function stateTone(state: ReadinessState): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+  if (state === 'ready') return 'success'
+  if (state === 'warning') return 'warning'
+  if (state === 'blocked') return 'danger'
+  if (state === 'checking') return 'info'
+  return 'neutral'
+}
+
+function stateLabel(state: ReadinessState): string {
+  if (state === 'ready') return 'Ready'
+  if (state === 'warning') return 'Needs attention'
+  if (state === 'blocked') return 'Blocked'
+  if (state === 'checking') return 'Checking'
+  return 'Info'
+}
+
+function categoryState(checks: ReadinessCheck[]): ReadinessState {
+  if (checks.some((check) => check.state === 'checking')) return 'checking'
+  if (checks.some((check) => check.state === 'blocked')) return 'blocked'
+  if (checks.some((check) => check.state === 'warning')) return 'warning'
+  if (checks.every((check) => check.state === 'ready' || check.state === 'info')) return 'ready'
+  return 'info'
+}
+
 export function IntelligentScheduleWorkspace({
   termId,
   term,
   options,
   optionsLoading,
+  loadError,
   conflicts,
 }: IntelligentScheduleWorkspaceProps) {
+  const [stage, setStage] = useState<WorkspaceStage>('overview')
   const [inventory, setInventory] = useState<ScheduleRecord[] | null>(null)
-  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventoryLoading, setInventoryLoading] = useState(true)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [inventoryVersion, setInventoryVersion] = useState(0)
   const [assignmentReadiness, setAssignmentReadiness] = useState<AssignmentReadiness | null>(null)
@@ -108,23 +168,25 @@ export function IntelligentScheduleWorkspace({
   const [checkedOfferingCount, setCheckedOfferingCount] = useState(0)
   const [assignmentError, setAssignmentError] = useState<string | null>(null)
   const [replacementDraftIds, setReplacementDraftIds] = useState<number[]>([])
-  const [samplePreviewOpen, setSamplePreviewOpen] = useState(false)
   const [keepDay, setKeepDay] = useState(true)
   const [keepStartTime, setKeepStartTime] = useState(true)
   const [keepRoom, setKeepRoom] = useState(true)
-  const [minimalChangeWeight, setMinimalChangeWeight] = useState('')
 
-  const offeringSignature = useMemo(
-    () => options?.offerings.map((offering) => offering.id).sort((left, right) => left - right).join(',') ?? '',
-    [options],
-  )
+  const offeringSignature = options?.offerings
+    .map((offering) => offering.id)
+    .sort((left, right) => left - right)
+    .join(',') ?? ''
   const hasCurrentAssignmentCheck = Boolean(
     assignmentReadiness && assignmentReadiness.checkedSignature === offeringSignature,
   )
 
   useEffect(() => {
     let active = true
-    if (!termId) return () => { active = false }
+    if (!termId) {
+      setInventory(null)
+      setInventoryLoading(false)
+      return () => { active = false }
+    }
 
     void Promise.resolve().then(async () => {
       setInventoryLoading(true)
@@ -264,35 +326,250 @@ export function IntelligentScheduleWorkspace({
     !Number.isFinite(room.capacity) || room.capacity <= 0 || !room.room_type.trim()
   ))
 
-  const offeringsState: ReadinessState = optionsLoading
-    ? 'checking'
-    : !options
-      ? 'blocked'
-      : configuredOfferings.length
-        ? 'warning'
-        : 'blocked'
-  const assignmentState: ReadinessState = assignmentLoading
+  const assignmentProblemCount = assignmentReadiness
+    ? assignmentReadiness.missing + assignmentReadiness.multiple + assignmentReadiness.unavailable
+    : 0
+  const assignmentCheckState: ReadinessState = assignmentLoading
     ? 'checking'
     : !hasCurrentAssignmentCheck
       ? 'blocked'
-      : assignmentReadiness?.missing || assignmentReadiness?.multiple || assignmentReadiness?.unavailable
+      : assignmentProblemCount
         ? 'blocked'
         : 'ready'
-  const blockers = [
-    !term ? 'Select an active or planned academic term.' : null,
-    offeringsState === 'blocked' ? 'No configured offerings are available for this term.' : null,
-    !hasCurrentAssignmentCheck ? 'Check active professor assignments for every configured offering.' : null,
-    assignmentState === 'blocked' && hasCurrentAssignmentCheck ? 'Resolve missing, ambiguous, or unreadable offering assignments.' : null,
-    hasCurrentAssignmentCheck && assignmentReadiness?.profileFailures ? 'Resolve unreadable professor profiles before availability can be validated.' : null,
-    !inventory || inventoryLoading ? 'Load the complete published and draft schedule inventory.' : null,
-    'The current scheduling options API does not certify the complete required-offering set; returned open offerings cannot prove semester coverage.',
-    configuredOfferings.length > 0 ? 'Approved meeting plans and occurrence counts are not exposed by the current API.' : null,
-    'Institutional operating days, hours, and valid start boundaries are not exposed by the current API.',
-    'Term-associated full-time policies and authorized exceptions are not exposed by the current API.',
-    'Part-time actual-hour workload targets are not exposed by the current API.',
-    availableRooms.length === 0 ? 'No available rooms are listed for this term.' : null,
-    invalidRooms.length ? `${invalidRooms.length} available room record${invalidRooms.length === 1 ? ' has' : 's have'} invalid capacity or room type data.` : null,
-  ].filter((item): item is string => Boolean(item))
+  const assignmentDetail = assignmentLoading
+    ? `Checking active assignment records: ${checkedOfferingCount} of ${configuredOfferings.length} open offerings.`
+    : !hasCurrentAssignmentCheck
+      ? 'Professor assignments have not been checked for the configured offerings. The AI never selects or redistributes professors.'
+      : assignmentReadiness && assignmentProblemCount
+        ? `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary offering.`
+        : `${assignmentReadiness?.checkedOfferings ?? 0} offerings each have exactly one distinct assigned professor.`
+
+  const academicChecks: ReadinessCheck[] = [
+    {
+      title: 'Academic term',
+      state: term ? 'ready' : 'blocked',
+      detail: term ? `${termName(term)} · ${term.status}` : 'Select an active or planned academic term.',
+      link: { to: '/academic/terms', label: 'Open academic terms' },
+    },
+    {
+      title: 'Programs, year levels, and sections',
+      state: optionsLoading ? 'checking' : loadError ? 'blocked' : configuredOfferings.length ? 'ready' : 'blocked',
+      detail: optionsLoading
+        ? 'Loading the configured academic structure…'
+        : loadError
+          ? loadError
+          : configuredOfferings.length
+            ? `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections are represented in the returned offerings.`
+            : 'No configured offerings were returned for this term.',
+      link: { to: '/academic/sections', label: 'Review sections' },
+    },
+    {
+      title: 'Required subject offerings',
+      state: optionsLoading ? 'checking' : loadError ? 'blocked' : configuredOfferings.length ? 'warning' : 'blocked',
+      detail: optionsLoading
+        ? 'Loading open subject offerings…'
+        : loadError
+          ? loadError
+          : configuredOfferings.length
+            ? `${configuredOfferings.length} open offerings are available. CCSync cannot yet confirm the complete required-offering set.`
+            : 'No open offerings are available. Create or open subject offerings before scheduling.',
+      link: { to: '/academic/subject-offerings', label: 'Review subject offerings' },
+    },
+  ]
+
+  const meetingChecks: ReadinessCheck[] = [
+    {
+      title: 'Lecture and laboratory meeting plans',
+      state: 'blocked',
+      detail: 'Meeting frequency, duration, and meeting type are not available yet.',
+      link: { to: '/academic/subject-offerings', label: 'Review offerings' },
+    },
+    {
+      title: 'Frequency, duration, and required room type',
+      state: 'blocked',
+      detail: 'Approved meeting requirements must come from offering data. Subject catalog hours are not treated as a meeting plan.',
+    },
+  ]
+
+  const facultyChecks: ReadinessCheck[] = [
+    {
+      title: 'One distinct professor per offering',
+      state: assignmentCheckState,
+      detail: assignmentDetail,
+      link: { to: '/academic/subject-offerings', label: 'Review faculty assignments' },
+      action: 'check-assignments',
+      actionLabel: hasCurrentAssignmentCheck ? 'Recheck assignments' : 'Check assignments',
+    },
+    {
+      title: 'Employment type and recurring availability',
+      state: !hasCurrentAssignmentCheck
+        ? 'info'
+        : (assignmentReadiness?.profileFailures ?? 0) > 0
+          ? 'blocked'
+          : 'info',
+      detail: hasCurrentAssignmentCheck && assignmentReadiness
+        ? `${assignmentReadiness.profilesChecked} profiles checked · ${assignmentReadiness.fullTimeProfessors} full-time · ${assignmentReadiness.partTimeProfessors} part-time · ${assignmentReadiness.professorsWithTermWindows} with term availability · ${assignmentReadiness.professorsWithoutTermWindows} with none (unrestricted). Date-specific exceptions are not available yet.`
+        : 'Run the assignment check to inspect professor employment types and recurring term availability.',
+      link: { to: '/faculty', label: 'Review faculty records' },
+    },
+    {
+      title: 'Full-time workday policy and exceptions',
+      state: 'blocked',
+      detail: 'Monday–Wednesday is the approved standard working pattern. The term-associated policy and authorized exceptions are not available yet.',
+    },
+    {
+      title: 'Part-time workload targets',
+      state: 'info',
+      detail: 'Weekly targets use actual teaching hours and remain soft objectives. A target deviation is never a hard scheduling failure. Targets are not available yet.',
+      link: { to: '/faculty', label: 'Review faculty records' },
+    },
+  ]
+
+  const facilityChecks: ReadinessCheck[] = [
+    {
+      title: 'Room configuration and capacity',
+      state: optionsLoading
+        ? 'checking'
+        : availableRooms.length === 0
+          ? 'blocked'
+          : 'warning',
+      detail: optionsLoading
+        ? 'Loading room inventory…'
+        : availableRooms.length === 0
+          ? 'No rooms are marked available for this term.'
+          : `${availableRooms.length} available rooms${invalidRooms.length ? ` · ${invalidRooms.length} with invalid capacity or room type` : ''}. Capacity and room type suitability cannot be verified without approved meeting plans.`,
+      link: { to: '/rooms', label: 'Review room inventory' },
+    },
+    {
+      title: 'Explicit combined-class groups',
+      state: 'info',
+      detail: 'Only explicitly configured combined classes are used. No combined-class configuration is available yet.',
+    },
+  ]
+
+  const timetableChecks: ReadinessCheck[] = [
+    {
+      title: 'Published baseline',
+      state: inventoryLoading ? 'checking' : inventoryError || !inventory ? 'blocked' : 'ready',
+      detail: inventoryLoading
+        ? 'Loading the complete schedule inventory…'
+        : inventoryError
+          ? inventoryError
+          : `${publishedSchedules.length} published schedule record${publishedSchedules.length === 1 ? '' : 's'} remain active${publishedSchedules.length ? ' as the comparison baseline' : ''}.`,
+    },
+    {
+      title: 'Existing drafts',
+      state: inventoryLoading ? 'checking' : inventoryError || !inventory ? 'blocked' : 'info',
+      detail: inventoryLoading
+        ? 'Loading draft schedules…'
+        : inventoryError
+          ? 'Draft inventory could not be loaded.'
+          : `${draftSchedules.length} draft schedule record${draftSchedules.length === 1 ? '' : 's'} are preserved. No draft is selected for replacement by default.`,
+    },
+    {
+      title: 'Open schedule conflicts',
+      state: activeConflicts.length ? 'warning' : 'ready',
+      detail: activeConflicts.length
+        ? `${activeConflicts.length} open conflict${activeConflicts.length === 1 ? '' : 's'} exist in the current manual timetable. They do not describe a new candidate.`
+        : 'No open conflicts are recorded for the current timetable.',
+    },
+  ]
+
+  const availabilityExtra = hasCurrentAssignmentCheck && assignmentReadiness?.professorProfiles.length ? (
+    <details className="mt-1 rounded-lg border border-line bg-white">
+      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600">
+        View recurring availability ({assignmentReadiness.professorProfiles.length} professors)
+      </summary>
+      <div className="space-y-2 border-t border-line px-3 py-2">
+        {assignmentReadiness.professorProfiles.map((professor) => (
+          <div key={professor.id} className="border-b border-line pb-2 last:border-b-0 last:pb-0">
+            <p className="text-xs font-semibold text-ink">{professor.name} · {professor.employmentType.replaceAll('_', ' ')}</p>
+            {professor.windows.length ? (
+              <ul className="mt-1 grid gap-1 text-[11px] text-ink-muted sm:grid-cols-2">
+                {professor.windows.map((window, index) => (
+                  <li key={`${professor.id}-${window.day}-${window.startTime}-${index}`}>
+                    {formatScheduleDay(window.day)} · {window.startTime}–{window.endTime} · {window.type}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-[11px] text-ink-muted">No term availability is defined, so the professor is treated as unrestricted.</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  ) : undefined
+
+  const categories: ReadinessCategory[] = [
+    {
+      id: 'academic',
+      title: 'Academic configuration',
+      summary: optionsLoading
+        ? 'Loading programs, sections, and offerings…'
+        : loadError
+          ? 'Scheduling options could not be loaded.'
+          : `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections`,
+      checks: academicChecks,
+    },
+    {
+      id: 'meetings',
+      title: 'Meeting requirements',
+      summary: 'Lecture and laboratory meeting plans are not available yet.',
+      checks: meetingChecks,
+    },
+    {
+      id: 'faculty',
+      title: 'Faculty',
+      summary: !hasCurrentAssignmentCheck
+        ? 'Professor assignments have not been checked.'
+        : assignmentProblemCount
+          ? `${assignmentProblemCount} of ${assignmentReadiness?.checkedOfferings ?? configuredOfferings.length} offerings need attention.`
+          : `${assignmentReadiness?.distinctProfessors ?? 0} professors assigned without assignment issues.`,
+      checks: facultyChecks,
+      extra: availabilityExtra,
+    },
+    {
+      id: 'facilities',
+      title: 'Facilities',
+      summary: optionsLoading
+        ? 'Loading room inventory…'
+        : `${availableRooms.length} available rooms${invalidRooms.length ? ` · ${invalidRooms.length} invalid` : ''}`,
+      checks: facilityChecks,
+    },
+    {
+      id: 'timetable',
+      title: 'Existing timetable',
+      summary: inventoryLoading
+        ? 'Loading published and draft schedules…'
+        : inventoryError
+          ? 'Schedule inventory could not be loaded.'
+          : `${publishedSchedules.length} published · ${draftSchedules.length} drafts${activeConflicts.length ? ` · ${activeConflicts.length} open conflicts` : ''}`,
+      checks: timetableChecks,
+    },
+  ]
+
+  const allChecks = categories.flatMap((category) => category.checks)
+  const blockingCount = allChecks.filter((check) => check.state === 'blocked').length
+  const warningCount = allChecks.filter((check) => check.state === 'warning').length
+  const readinessState: ReadinessState = optionsLoading || inventoryLoading || assignmentLoading
+    ? 'checking'
+    : blockingCount
+      ? 'blocked'
+      : warningCount
+        ? 'warning'
+        : 'ready'
+
+  const generationReason = !term
+    ? 'Select an active or planned academic term to continue.'
+    : optionsLoading || inventoryLoading || assignmentLoading
+      ? 'Waiting for scheduling inputs to finish loading.'
+      : blockingCount
+        ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved before generation.`
+        : !GENERATION_SERVICE_CONNECTED
+          ? 'Generation is not available in this release.'
+          : 'All readiness checks passed.'
+  const generationReady = Boolean(term) && readinessState === 'ready' && GENERATION_SERVICE_CONNECTED
 
   async function handleCheckAssignments() {
     try {
@@ -309,361 +586,618 @@ export function IntelligentScheduleWorkspace({
     ))
   }
 
-  return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-700">Intelligent AI scheduling</p>
-            <h2 className="mt-1 text-lg font-semibold text-ink">Complete-semester scheduling workspace</h2>
-            <p className="mt-1 text-xs text-ink-muted">{termName(term)} · Requested scope: the entire academic term</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={publishedSchedules.length ? 'success' : 'neutral'}>
-              {inventoryLoading ? 'Loading timetable' : publishedSchedules.length ? 'Published baseline exists' : inventory ? 'No published baseline' : 'Baseline unverified'}
-            </Badge>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setInventoryVersion((value) => value + 1)}
-              disabled={inventoryLoading}
-              leftIcon={<RefreshCw className={`size-4 ${inventoryLoading ? 'animate-spin' : ''}`} aria-hidden="true" />}
-            >
-              Refresh inventory
-            </Button>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <OverviewMetric label="Programs in open offerings" value={optionsLoading ? '—' : `${programCount}`} />
-            <OverviewMetric label="Year levels in open offerings" value={optionsLoading ? '—' : `${yearLevelCount}`} />
-            <OverviewMetric label="Sections in open offerings" value={optionsLoading ? '—' : `${sectionCount}`} />
-            <OverviewMetric label="Open offerings returned" value={optionsLoading ? '—' : `${configuredOfferings.length}`} />
-            <OverviewMetric label="Required meetings" value="Not available" detail="Meeting-plan data is not exposed" />
-            <OverviewMetric label="Assigned professors" value={hasCurrentAssignmentCheck && assignmentReadiness ? `${assignmentReadiness.distinctProfessors}` : 'Not checked'} />
-            <OverviewMetric label="Available rooms" value={optionsLoading ? '—' : `${availableRooms.length}`} detail={invalidRooms.length ? `${invalidRooms.length} with invalid capacity/type` : 'Room suitability needs meeting plans'} />
-            <OverviewMetric label="Prior generation" value="Not available" detail="No generation history API" />
-          </div>
-          <p className="mt-4 flex items-start gap-2 border-t border-line pt-4 text-xs leading-5 text-ink-muted">
-            <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            The current scheduling options API returns open offerings for manual scheduling; it does not certify the complete required-offering set. CCSync has no authoritative curriculum model, so this page does not infer or add subjects.
-          </p>
-          <p className="mt-2 text-[11px] leading-4 text-ink-muted">
-            This inventory is a live paginated API read, not an immutable generation snapshot; concurrent changes must be revalidated by the future Laravel integration.
-          </p>
-        </CardBody>
-      </Card>
+  const stageStatus: Record<WorkspaceStage, string> = {
+    overview: stateLabel(readinessState),
+    generation: blockingCount ? `${blockingCount} blocking` : 'Configured',
+    review: 'No candidate',
+    approval: 'No candidate',
+  }
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
+  return (
+    <div className="space-y-4">
+      <WorkspaceSteps stage={stage} onChange={setStage} status={stageStatus} />
+
+      {stage === 'overview' ? (
+        <OverviewStage
+          term={term}
+          optionsLoading={optionsLoading}
+          loadError={loadError}
+          programCount={programCount}
+          yearLevelCount={yearLevelCount}
+          sectionCount={sectionCount}
+          offeringCount={configuredOfferings.length}
+          hasCurrentAssignmentCheck={hasCurrentAssignmentCheck}
+          assignmentReadiness={assignmentReadiness}
+          readinessState={readinessState}
+          blockingCount={blockingCount}
+          warningCount={warningCount}
+          categories={categories}
+          assignmentLoading={assignmentLoading}
+          assignmentError={assignmentError}
+          hasConfiguredOfferings={configuredOfferings.length > 0}
+          canGenerate={generationReady}
+          generationReason={generationReason}
+          onCheckAssignments={() => void handleCheckAssignments()}
+          onRefreshInventory={() => setInventoryVersion((value) => value + 1)}
+          inventoryLoading={inventoryLoading}
+        />
+      ) : null}
+
+      {stage === 'generation' ? (
+        <GenerationStage
+          term={term}
+          inventoryLoading={inventoryLoading}
+          inventoryError={inventoryError}
+          publishedCount={publishedSchedules.length}
+          draftSchedules={draftSchedules}
+          replacementDraftIds={replacementDraftIds}
+          selectedReplacementDraftCount={selectedReplacementDraftCount}
+          onToggleReplacementDraft={toggleReplacementDraft}
+          keepDay={keepDay}
+          keepStartTime={keepStartTime}
+          keepRoom={keepRoom}
+          onKeepDayChange={setKeepDay}
+          onKeepStartTimeChange={setKeepStartTime}
+          onKeepRoomChange={setKeepRoom}
+          canGenerate={generationReady}
+          generationReason={generationReason}
+        />
+      ) : null}
+
+      {stage === 'review' ? (
+        <ReviewStage publishedCount={publishedSchedules.length} onGoToGeneration={() => setStage('generation')} />
+      ) : null}
+
+      {stage === 'approval' ? (
+        <ApprovalStage
+          publishedCount={publishedSchedules.length}
+          draftCount={draftSchedules.length}
+          inventoryLoading={inventoryLoading}
+          inventoryError={inventoryError}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function WorkspaceSteps({
+  stage,
+  onChange,
+  status,
+}: {
+  stage: WorkspaceStage
+  onChange: (stage: WorkspaceStage) => void
+  status: Record<WorkspaceStage, string>
+}) {
+  const steps: Array<{ id: WorkspaceStage; label: string; locked?: boolean }> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'generation', label: 'Generation' },
+    { id: 'review', label: 'Timetable review', locked: true },
+    { id: 'approval', label: 'Approval', locked: true },
+  ]
+
+  return (
+    <nav aria-label="Intelligent scheduling stages" className="overflow-x-auto border-b border-line">
+      <ol className="flex min-w-max items-stretch gap-1">
+        {steps.map((step, index) => {
+          const active = stage === step.id
+
+          return (
+            <li key={step.id}>
+              <button
+                type="button"
+                aria-current={active ? 'step' : undefined}
+                onClick={() => onChange(step.id)}
+                className={cn(
+                  'flex items-center gap-2.5 border-b-2 px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600',
+                  active
+                    ? 'border-maroon-600 text-maroon-800'
+                    : 'border-transparent text-ink-muted hover:text-ink',
+                )}
+              >
+                <span className={cn(
+                  'flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold',
+                  active ? 'border-maroon-200 bg-maroon-50 text-maroon-700' : 'border-line bg-white text-ink-muted',
+                )}>
+                  {index + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold">
+                    {step.label}
+                    {step.locked ? <LockKeyhole className="size-3.5" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="mt-0.5 block whitespace-nowrap text-[11px] font-medium text-ink-muted">
+                    {status[step.id]}
+                  </span>
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
+function OverviewStage({
+  term,
+  optionsLoading,
+  loadError,
+  programCount,
+  yearLevelCount,
+  sectionCount,
+  offeringCount,
+  hasCurrentAssignmentCheck,
+  assignmentReadiness,
+  readinessState,
+  blockingCount,
+  warningCount,
+  categories,
+  assignmentLoading,
+  assignmentError,
+  hasConfiguredOfferings,
+  canGenerate,
+  generationReason,
+  onCheckAssignments,
+  onRefreshInventory,
+  inventoryLoading,
+}: {
+  term: AcademicTerm | undefined
+  optionsLoading: boolean
+  loadError?: string | null
+  programCount: number
+  yearLevelCount: number
+  sectionCount: number
+  offeringCount: number
+  hasCurrentAssignmentCheck: boolean
+  assignmentReadiness: AssignmentReadiness | null
+  readinessState: ReadinessState
+  blockingCount: number
+  warningCount: number
+  categories: ReadinessCategory[]
+  assignmentLoading: boolean
+  assignmentError: string | null
+  hasConfiguredOfferings: boolean
+  canGenerate: boolean
+  generationReason: string
+  onCheckAssignments: () => void
+  onRefreshInventory: () => void
+  inventoryLoading: boolean
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-5">
         <Card>
-          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="font-semibold text-ink">Scheduling readiness</h3>
-              <p className="mt-1 text-xs text-ink-muted">Blocking inputs are distinguished from warnings and informational gaps.</p>
+              <h2 className="text-sm font-semibold text-ink">Semester summary</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">Complete-semester scope across configured programs, year levels, and sections.</p>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              isLoading={assignmentLoading}
-              disabled={optionsLoading || !configuredOfferings.length}
-              onClick={() => void handleCheckAssignments()}
-            >
-              {hasCurrentAssignmentCheck ? 'Recheck assignments' : 'Check assignments'}
-            </Button>
+            <Badge tone="neutral">Complete semester</Badge>
           </CardHeader>
-          <CardBody className="space-y-2">
-            <ReadinessItem
-              state={term ? 'ready' : 'blocked'}
-              title="Academic term"
-              detail={term ? `${termName(term)} · ${term.status}` : 'Select an active or planned term.'}
-              link={{ to: '/academic/terms', label: 'Academic terms' }}
-            />
-            <ReadinessItem
-              state={offeringsState}
-              title="Programs, year levels, sections, and configured offerings"
-              detail={optionsLoading ? 'Loading existing scheduling options…' : `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections represented in ${configuredOfferings.length} open offerings. This API response cannot confirm complete semester coverage.`}
-              link={{ to: '/academic/subject-offerings', label: 'Subject offerings' }}
-            />
-            <ReadinessItem
-              state="blocked"
-              title="Lecture and laboratory meeting plans"
-              detail="The current API does not expose offering-level meeting frequency, duration, or approved room requirements. Subject catalog hours are not treated as a meeting plan."
-              link={{ to: '/academic/subject-offerings', label: 'Review offerings' }}
-            />
-            <ReadinessItem
-              state={assignmentLoading ? 'checking' : !hasCurrentAssignmentCheck ? 'blocked' : assignmentState}
-              title="One distinct assigned professor per ordinary offering"
-              detail={assignmentLoading
-                ? `Checking active assignment records: ${checkedOfferingCount} of ${configuredOfferings.length} open offerings.`
-                : hasCurrentAssignmentCheck && assignmentReadiness
-                  ? `${assignmentReadiness.checkedOfferings} open offerings checked · ${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} unreadable.`
-                  : 'Assignment completeness has not been checked for the open offerings returned by the API. The AI workflow does not select or redistribute professors.'}
-              link={{ to: '/academic/subject-offerings', label: 'Review assignments' }}
-            />
-            {assignmentError ? (
-              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{assignmentError}</p>
-            ) : null}
-            <ReadinessItem
-              state={hasCurrentAssignmentCheck && assignmentReadiness?.profileFailures === 0 ? 'info' : 'warning'}
-              title="Faculty availability and employment type"
-              detail={hasCurrentAssignmentCheck && assignmentReadiness
-                ? `${assignmentReadiness.profilesChecked} profiles checked (${assignmentReadiness.fullTimeProfessors} full-time · ${assignmentReadiness.partTimeProfessors} part-time) · ${assignmentReadiness.professorsWithTermWindows} with term windows · ${assignmentReadiness.professorsWithoutTermWindows} with no term windows (unrestricted under the approved rule) · ${assignmentReadiness.profileFailures} unreadable. Date-specific exceptions are not represented.`
-                : 'Existing faculty profiles expose recurring term availability and employment type, but those records have not been loaded.'}
-              link={{ to: '/faculty', label: 'Faculty records' }}
-            />
-            {hasCurrentAssignmentCheck && assignmentReadiness?.professorProfiles.length ? (
-              <details className="rounded-lg border border-line p-3">
-                <summary className="cursor-pointer text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600">
-                  View recurring term availability ({assignmentReadiness.professorProfiles.length} professors)
-                </summary>
-                <div className="mt-3 space-y-3">
-                  {assignmentReadiness.professorProfiles.map((professor) => (
-                    <div key={professor.id} className="border-t border-line pt-3">
-                      <p className="text-xs font-semibold text-ink">{professor.name} · {professor.employmentType.replaceAll('_', ' ')}</p>
-                      {professor.windows.length ? (
-                        <ul className="mt-1 grid gap-1 text-[11px] text-ink-muted sm:grid-cols-2">
-                          {professor.windows.map((window, index) => (
-                            <li key={`${professor.id}-${window.day}-${window.startTime}-${index}`}>
-                              {formatScheduleDay(window.day)} · {window.startTime}–{window.endTime} · {window.type}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-1 text-[11px] text-ink-muted">No term-specific windows; unrestricted under the approved empty-availability rule.</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 text-[11px] leading-4 text-ink-muted">These are recurring weekly records from existing faculty profiles. No date-specific exceptions are exposed by the current API.</p>
-              </details>
-            ) : null}
-            <ReadinessItem
-              state="blocked"
-              title="Full-time workday policy and exceptions"
-              detail="Monday–Wednesday is the approved standard, but the term-associated policy and authorized exception data are not available through the current scheduling APIs."
-            />
-            <ReadinessItem
-              state="blocked"
-              title="Part-time weekly workload targets"
-              detail="Targets must be in actual teaching hours and remain soft objectives. No term-associated per-professor target is exposed; missing targets are an input gap, not a hard workload conflict."
-              link={{ to: '/faculty', label: 'Faculty records' }}
-            />
-            <ReadinessItem
-              state={availableRooms.length && invalidRooms.length === 0 ? 'warning' : 'blocked'}
-              title="Room configuration and suitability"
-              detail={optionsLoading
-                ? 'Loading room inventory…'
-                : `${availableRooms.length} rooms marked available${invalidRooms.length ? ` · ${invalidRooms.length} with invalid capacity or room type` : ''}. Capacity and required room type cannot be checked without meeting plans.`}
-              link={{ to: '/rooms', label: 'Room inventory' }}
-            />
-            <ReadinessItem
-              state="warning"
-              title="Explicit combined-class groups"
-              detail="No combined-class configuration is exposed by the current scheduling APIs. Groups are never inferred from matching subject or section names."
-            />
-            <ReadinessItem
-              state={inventoryLoading ? 'checking' : inventoryError || !inventory ? 'blocked' : 'ready'}
-              title="Published baseline and existing drafts"
-              detail={inventoryLoading
-                ? 'Loading all schedule pages for the selected term…'
-                : inventoryError
-                  ? inventoryError
-                  : `${publishedSchedules.length} published schedule records remain active as the comparison baseline · ${draftSchedules.length} draft records are preserved unless explicitly selected below.`}
-            />
-            {activeConflicts.length ? (
-              <ReadinessItem
-                state="warning"
-                title="Existing manual schedule conflicts"
-                detail={`${activeConflicts.length} open conflict${activeConflicts.length === 1 ? '' : 's'} are present in the current conflict register. They describe the active/manual timetable, not a new candidate.`}
+          <CardBody>
+            <dl className="grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:divide-x sm:divide-line">
+              <SummaryMetric label="Programs" value={optionsLoading ? '—' : `${programCount}`} />
+              <SummaryMetric label="Sections" value={optionsLoading ? '—' : `${sectionCount}`} />
+              <SummaryMetric
+                label="Required offerings"
+                value={optionsLoading ? '—' : `${offeringCount}`}
+                detail="Open offerings returned"
               />
-            ) : null}
+              <SummaryMetric
+                label="Assigned professors"
+                value={!hasCurrentAssignmentCheck ? 'Not checked' : `${assignmentReadiness?.distinctProfessors ?? 0}`}
+              />
+            </dl>
+            <p className="mt-4 border-t border-line pt-3 text-[11px] leading-4 text-ink-muted">
+              Counts come from the current scheduling options. CCSync returns open offerings and cannot yet confirm the complete required-offering set.
+            </p>
           </CardBody>
         </Card>
 
-        <div className="space-y-5">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-ink">Generation configuration</h3>
-              <p className="mt-1 text-xs text-ink-muted">Complete-term scope only; no professor assignment controls are provided.</p>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <div className="rounded-lg border border-maroon-100 bg-maroon-50 p-3">
-                <p className="text-sm font-semibold text-maroon-900">Entire academic term</p>
-                <p className="mt-1 text-xs leading-5 text-maroon-900/80">The eventual generation must cover every required program, year level, section, and offering. The current API cannot certify that complete set; individual filters are for review only.</p>
+        <Card>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3 py-4">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Scheduling readiness</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {blockingCount} blocking · {warningCount} warning{warningCount === 1 ? '' : 's'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={stateTone(readinessState)}>{stateLabel(readinessState)}</Badge>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                isLoading={assignmentLoading}
+                disabled={optionsLoading || !hasConfiguredOfferings}
+                onClick={onCheckAssignments}
+              >
+                {hasCurrentAssignmentCheck ? 'Recheck assignments' : 'Check assignments'}
+              </Button>
+            </div>
+          </CardHeader>
+          <div className="divide-y divide-line">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[11px] text-ink-muted sm:px-5">
+              <span>Expand a category to inspect individual checks.</span>
+              <Button variant="ghost" size="sm" onClick={onRefreshInventory} disabled={inventoryLoading} className="h-7 px-2 text-[11px]">
+                <RefreshCw className={cn('size-3.5', inventoryLoading && 'animate-spin')} aria-hidden="true" />
+                Refresh inventory
+              </Button>
+            </div>
+            {loadError ? (
+              <div role="alert" className="flex items-start gap-2 px-4 py-3 text-xs text-red-800 sm:px-5">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <p>Scheduling options could not be fully loaded. {loadError}</p>
               </div>
-              <ConfigUnavailable label="Operating days, hours, and valid start boundaries" detail="Institution-configured and term-associated values are not available." />
-              <ConfigUnavailable label="Meeting plans and room requirements" detail="Frequency, duration, meeting type, and required room type are not available." />
-              <ConfigUnavailable label="Solver time limit and execution settings" detail="No connected generation API exposes supported runtime settings." />
-              <fieldset className="space-y-2">
-                <legend className="text-xs font-semibold text-ink">Minimal-change preferences</legend>
-                <PreferenceCheckbox checked={keepDay} onChange={setKeepDay}>Prefer the previous meeting day</PreferenceCheckbox>
-                <PreferenceCheckbox checked={keepStartTime} onChange={setKeepStartTime}>Prefer the previous start time</PreferenceCheckbox>
-                <PreferenceCheckbox checked={keepRoom} onChange={setKeepRoom}>Prefer the previous room</PreferenceCheckbox>
-                <label className="block text-xs text-ink-muted">
-                  Minimal-change objective weight
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={minimalChangeWeight}
-                    onChange={(event) => setMinimalChangeWeight(event.target.value)}
-                    placeholder="Unset — no approved default"
-                    className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600"
-                    aria-describedby="minimal-change-weight-help"
-                  />
-                </label>
-                <p id="minimal-change-weight-help" className="text-[11px] leading-4 text-ink-muted">
-                  Preferences are local UI state only; no weight is preselected or saved. The backend does not yet accept these settings.
-                </p>
-                <p className="text-[11px] leading-4 text-ink-muted">Previous placements are comparison context, not hard constraints. Hard constraints and fixed professor assignments always take priority.</p>
-              </fieldset>
-            </CardBody>
-          </Card>
+            ) : null}
+            {assignmentError ? (
+              <div role="alert" className="flex items-start gap-2 px-4 py-3 text-xs text-red-800 sm:px-5">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <p>{assignmentError}</p>
+              </div>
+            ) : null}
+            {categories.map((category) => (
+              <ReadinessCategoryRow
+                key={category.id}
+                category={category}
+                assignmentLoading={assignmentLoading}
+                onCheckAssignments={onCheckAssignments}
+              />
+            ))}
+          </div>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-ink">Draft replacement scope</h3>
-              <p className="mt-1 text-xs text-ink-muted">No draft is selected by default. Published schedules are never selectable for replacement here.</p>
-            </CardHeader>
-            <CardBody>
+      <div className="space-y-5">
+        <Card>
+          <CardHeader className="py-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-maroon-50 text-maroon-700">
+                <Sparkles className="size-4" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Generate timetable</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">One complete-semester run</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <div>
+              <Badge tone={stateTone(readinessState)}>{stateLabel(readinessState)}</Badge>
+              <p className="mt-2 text-sm font-medium text-ink">
+                {blockingCount
+                  ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved.`
+                  : warningCount
+                    ? `${warningCount} warning${warningCount === 1 ? '' : 's'} to review.`
+                    : 'All readiness checks passed.'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-ink-muted">
+                {term ? 'Creates a complete timetable for the configured term.' : 'Select an academic term to begin.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={!canGenerate}
+              leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+            >
+              Generate complete-semester timetable
+            </Button>
+            <p className="text-[11px] leading-4 text-ink-muted">{generationReason}</p>
+            <div className="rounded-lg border border-line bg-surface-soft p-3 text-xs leading-5 text-ink-muted">
+              The current published timetable remains active. Professor assignments are never changed by the AI.
+            </div>
+            <p className="text-[11px] leading-4 text-ink-muted">
+              Generation is not available in this release, so the action stays disabled even when inputs are complete.
+            </p>
+          </CardBody>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function SummaryMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="px-0 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">{value}</dd>
+      {detail ? <dd className="mt-0.5 text-[11px] leading-4 text-ink-muted">{detail}</dd> : null}
+    </div>
+  )
+}
+
+function ReadinessCategoryRow({
+  category,
+  assignmentLoading,
+  onCheckAssignments,
+}: {
+  category: ReadinessCategory
+  assignmentLoading: boolean
+  onCheckAssignments: () => void
+}) {
+  const state = categoryState(category.checks)
+
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 transition-colors hover:bg-surface-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600 sm:px-5 [&::-webkit-details-marker]:hidden">
+        <span className={cn('mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border', stateClasses(state))}>
+          <StateIcon state={state} className="size-3.5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-ink">{category.title}</span>
+            <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge>
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-ink-muted">{category.summary}</span>
+        </span>
+        <ChevronDown className="mt-1 size-4 shrink-0 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="border-t border-line bg-surface-soft/60 px-4 py-1 sm:px-5">
+        <ul className="divide-y divide-line">
+          {category.checks.map((check) => (
+            <li key={check.title} className="py-2.5">
+              <div className="flex items-start gap-2">
+                <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border', stateClasses(check.state))}>
+                  <StateIcon state={check.state} className="size-3" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold text-ink">{check.title}</p>
+                    {check.state === 'blocked' ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-red-700">Blocking</span>
+                    ) : check.state === 'warning' ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Warning</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-xs leading-5 text-ink-muted">{check.detail}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-3">
+                    {check.link ? (
+                      <Link
+                        to={check.link.to}
+                        className="text-xs font-semibold text-maroon-700 underline decoration-maroon-200 underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600"
+                      >
+                        {check.link.label}
+                      </Link>
+                    ) : null}
+                    {check.action === 'check-assignments' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="-ml-2 h-7 px-2 text-[11px]"
+                        isLoading={assignmentLoading}
+                        onClick={onCheckAssignments}
+                      >
+                        {check.actionLabel ?? 'Check assignments'}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {category.extra}
+      </div>
+    </details>
+  )
+}
+
+function GenerationStage({
+  term,
+  inventoryLoading,
+  inventoryError,
+  publishedCount,
+  draftSchedules,
+  replacementDraftIds,
+  selectedReplacementDraftCount,
+  onToggleReplacementDraft,
+  keepDay,
+  keepStartTime,
+  keepRoom,
+  onKeepDayChange,
+  onKeepStartTimeChange,
+  onKeepRoomChange,
+  canGenerate,
+  generationReason,
+}: {
+  term: AcademicTerm | undefined
+  inventoryLoading: boolean
+  inventoryError: string | null
+  publishedCount: number
+  draftSchedules: ScheduleRecord[]
+  replacementDraftIds: number[]
+  selectedReplacementDraftCount: number
+  onToggleReplacementDraft: (id: number) => void
+  keepDay: boolean
+  keepStartTime: boolean
+  keepRoom: boolean
+  onKeepDayChange: (value: boolean) => void
+  onKeepStartTimeChange: (value: boolean) => void
+  onKeepRoomChange: (value: boolean) => void
+  canGenerate: boolean
+  generationReason: string
+}) {
+  const baselineValue = inventoryLoading
+    ? 'Loading published records…'
+    : inventoryError
+      ? 'Unavailable'
+      : publishedCount
+        ? `${publishedCount} published record${publishedCount === 1 ? '' : 's'}`
+        : 'No published timetable'
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="space-y-5">
+        <Card>
+          <CardHeader className="py-4">
+            <h2 className="text-sm font-semibold text-ink">Semester scope</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">Generation always covers the entire configured term.</p>
+          </CardHeader>
+          <CardBody>
+            <dl>
+              <DefinitionRow label="Academic term" value={termName(term)} />
+              <DefinitionRow
+                label="Scope"
+                value="All configured programs, year levels, sections, and required offerings"
+              />
+              <DefinitionRow
+                label="Published baseline"
+                value={baselineValue}
+                detail="Used only as a soft optimization baseline."
+              />
+              <DefinitionRow
+                label="Generation behaviour"
+                value="One complete-semester run"
+                detail="The whole term is scheduled together. Sections cannot be generated independently."
+              />
+            </dl>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader className="py-4">
+            <h2 className="text-sm font-semibold text-ink">Optimization preferences</h2>
+            <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+              Prefer the previous timetable&apos;s day, time, and room when a valid alternative is available.
+            </p>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <PreferenceCheckbox checked={keepDay} onChange={onKeepDayChange}>
+              Prefer previous meeting day
+            </PreferenceCheckbox>
+            <PreferenceCheckbox checked={keepStartTime} onChange={onKeepStartTimeChange}>
+              Prefer previous start time
+            </PreferenceCheckbox>
+            <PreferenceCheckbox checked={keepRoom} onChange={onKeepRoomChange}>
+              Prefer previous room
+            </PreferenceCheckbox>
+            <p className="border-t border-line pt-3 text-[11px] leading-4 text-ink-muted">
+              These are soft preferences, not guarantees. Hard constraints and fixed professor assignments always take priority, and previous placements can still change.
+            </p>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600 [&::-webkit-details-marker]:hidden">
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Advanced settings</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Operating hours, time grid, and solver options.</p>
+              </div>
+              <span className="flex items-center gap-2">
+                <Badge tone="neutral">Not available</Badge>
+                <ChevronDown className="size-4 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+              </span>
+            </summary>
+            <div className="space-y-3 border-t border-line p-5">
+              <UnavailableSetting label="Operating days and hours" detail="Institution-configured and term-associated values are not available yet." />
+              <UnavailableSetting label="Time grid and valid start boundaries" detail="Time-grid configuration is not available yet." />
+              <UnavailableSetting label="Solver time limit and runtime settings" detail="Runtime settings are not available yet." />
+            </div>
+          </details>
+        </Card>
+
+        <Card>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600 [&::-webkit-details-marker]:hidden">
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Existing drafts</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">No draft is selected for replacement by default.</p>
+              </div>
+              <span className="flex items-center gap-2">
+                <span className="text-xs font-medium text-ink-muted">{draftSchedules.length}</span>
+                <ChevronDown className="size-4 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+              </span>
+            </summary>
+            <div className="space-y-2 border-t border-line p-5">
               {inventoryLoading ? (
-                <p className="flex items-center gap-2 text-xs text-ink-muted"><RefreshCw className="size-4 animate-spin" aria-hidden="true" /> Loading draft schedule records…</p>
+                <p className="flex items-center gap-2 text-xs text-ink-muted">
+                  <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                  Loading draft schedule records…
+                </p>
               ) : inventoryError ? (
                 <p role="alert" className="text-xs text-red-700">{inventoryError}</p>
               ) : draftSchedules.length ? (
-                <div className="space-y-2">
+                <>
                   {draftSchedules.map((schedule) => (
                     <label key={schedule.id} className="flex items-start gap-2 rounded-lg border border-line p-2.5 text-xs">
                       <input
                         type="checkbox"
                         checked={replacementDraftIds.includes(schedule.id)}
-                        onChange={() => toggleReplacementDraft(schedule.id)}
+                        onChange={() => onToggleReplacementDraft(schedule.id)}
                         className="mt-0.5 accent-maroon-700"
                       />
                       <span className="min-w-0">
-                        <span className="block font-semibold text-ink">{schedule.offering.subject.code} · {schedule.offering.section.code} · Draft #{schedule.id}</span>
-                        <span className="mt-0.5 block text-ink-muted">{formatScheduleDay(schedule.day_of_week)} · {schedule.start_time}–{schedule.end_time} · {schedule.offering.section.program.code}</span>
+                        <span className="block font-semibold text-ink">
+                          {schedule.offering.subject.code} · {schedule.offering.section.code} · Draft #{schedule.id}
+                        </span>
+                        <span className="mt-0.5 block text-ink-muted">
+                          {formatScheduleDay(schedule.day_of_week)} · {schedule.start_time}–{schedule.end_time} · {schedule.offering.section.program.code}
+                        </span>
                       </span>
                     </label>
                   ))}
                   <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] leading-4 text-amber-950">
-                    {selectedReplacementDraftCount} draft{selectedReplacementDraftCount === 1 ? '' : 's'} explicitly selected for a future replacement workflow. This selection is local only; it does not delete, overwrite, or constrain any schedule.
+                    {selectedReplacementDraftCount} draft{selectedReplacementDraftCount === 1 ? '' : 's'} selected locally. No draft is deleted, overwritten, or constrained by this selection.
                   </p>
-                </div>
+                </>
               ) : (
-                <p className="text-xs text-ink-muted">{inventory ? 'No existing draft schedules for this term.' : 'Drafts cannot be reviewed until the complete schedule inventory loads.'}</p>
+                <p className="text-xs text-ink-muted">No existing draft schedules for this term.</p>
               )}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold text-ink">Generation execution</h3>
-              <p className="mt-1 text-xs text-ink-muted">No live solver request or progress stream is connected.</p>
-            </CardHeader>
-            <CardBody className="space-y-3">
-              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
-                <Clock3 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <p>{blockers.length} readiness blocker{blockers.length === 1 ? '' : 's'} remain. Candidate generation is unavailable until the missing configuration and Laravel integration are implemented.</p>
-              </div>
-              <ul className="list-inside list-disc space-y-1 text-xs text-ink-muted">
-                {blockers.slice(0, 5).map((blocker) => <li key={blocker}>{blocker}</li>)}
-              </ul>
-              {blockers.length > 5 ? <p className="text-[11px] text-ink-muted">And {blockers.length - 5} additional blocker{blockers.length - 5 === 1 ? '' : 's'}.</p> : null}
-              <Button type="button" disabled leftIcon={<Sparkles className="size-4" aria-hidden="true" />}>
-                Generate complete-term candidate
-              </Button>
-              <p className="text-[11px] leading-4 text-ink-muted">This disabled action is not wired to Python or a Laravel endpoint. There is no generation identifier, live progress, cancellation, persistence, approval, or publication in this milestone.</p>
-            </CardBody>
-          </Card>
-        </div>
+            </div>
+          </details>
+        </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="font-semibold text-ink">Candidate review and publication</h3>
-            <p className="mt-1 text-xs text-ink-muted">The current published timetable remains active and unchanged throughout candidate preparation and review.</p>
-          </div>
-          <Badge tone="neutral">No live candidate</Badge>
-        </CardHeader>
-        <CardBody className="grid gap-3 sm:grid-cols-3">
-          <LifecycleSummary title="Generated candidate" detail="No generation API is connected." tone="info" />
-          <LifecycleSummary title="Draft / approved candidate" detail="Persistence and exact approver-role mapping are not implemented." tone="warning" />
-          <LifecycleSummary title="Published timetable" detail={`${publishedSchedules.length} published schedule records remain unchanged.`} tone="success" />
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-900">Isolated frontend fixture</p>
-            <h3 className="mt-1 font-semibold text-ink">Sample results and baseline comparison</h3>
-            <p className="mt-1 text-xs text-ink-muted">Use the synthetic preview to inspect timetable filters, variable meeting durations, retained/changed metrics, and lifecycle presentation.</p>
-          </div>
-          <Button type="button" variant={samplePreviewOpen ? 'outline' : 'secondary'} size="sm" onClick={() => setSamplePreviewOpen((open) => !open)}>
-            {samplePreviewOpen ? 'Hide sample preview' : 'View sample preview'}
-          </Button>
-        </CardHeader>
-        {samplePreviewOpen ? (
-          <CardBody>
-            <DevelopmentCandidatePreview />
+      <div className="space-y-5">
+        <Card>
+          <CardHeader className="py-4">
+            <h2 className="text-sm font-semibold text-ink">Start generation</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">Complete-semester run</p>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <Badge tone={canGenerate ? 'success' : 'warning'}>{canGenerate ? 'Ready to run' : 'Unavailable'}</Badge>
+            <p className="text-xs leading-5 text-ink-muted">{generationReason}</p>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={!canGenerate}
+              leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+            >
+              Generate complete-semester timetable
+            </Button>
+            <p className="text-[11px] leading-4 text-ink-muted">
+              Execution progress and solver status appear here only while a run is active. Generation is not available in this release.
+            </p>
           </CardBody>
-        ) : null}
-      </Card>
-
-      <p className="flex items-start gap-2 text-xs leading-5 text-ink-muted">
-        <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        The AI workflow does not assign or redistribute professors. Existing published placements can be re-optimized by the eventual solver; they are not fixed by default. No action on this page changes active schedules.
-      </p>
-    </div>
-  )
-}
-
-function OverviewMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface-soft p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-1 text-lg font-bold tabular-nums text-ink">{value}</p>
-      {detail ? <p className="mt-1 text-[11px] leading-4 text-ink-muted">{detail}</p> : null}
-    </div>
-  )
-}
-
-function ReadinessItem({
-  state,
-  title,
-  detail,
-  link,
-}: {
-  state: ReadinessState
-  title: string
-  detail: string
-  link?: { to: string; label: string }
-}) {
-  const tone = state === 'ready' ? 'success' : state === 'warning' ? 'warning' : state === 'blocked' ? 'danger' : state === 'checking' ? 'info' : 'neutral'
-  const statusLabel = state === 'ready' ? 'Ready' : state === 'warning' ? 'Warning' : state === 'blocked' ? 'Blocking' : state === 'checking' ? 'Checking' : 'Info'
-  const Icon = state === 'ready' ? Check : state === 'checking' ? RefreshCw : state === 'info' ? CircleHelp : AlertTriangle
-
-  return (
-    <div className="rounded-lg border border-line p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Icon className={`size-4 shrink-0 ${state === 'checking' ? 'animate-spin' : ''}`} aria-hidden="true" />
-        <p className="min-w-0 flex-1 text-sm font-semibold text-ink">{title}</p>
-        <Badge tone={tone}>{statusLabel}</Badge>
+        </Card>
       </div>
-      <p className="mt-1.5 text-xs leading-5 text-ink-muted">{detail}</p>
-      {link ? <Link className="mt-2 inline-flex text-xs font-semibold text-maroon-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600" to={link.to}>{link.label}</Link> : null}
     </div>
   )
 }
 
-function ConfigUnavailable({ label, detail }: { label: string; detail: string }) {
+function DefinitionRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="grid gap-1 border-b border-line py-3 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+      <dt className="text-xs font-semibold text-ink-muted">{label}</dt>
+      <dd className="text-sm text-ink">
+        {value}
+        {detail ? <span className="mt-0.5 block text-xs leading-5 text-ink-muted">{detail}</span> : null}
+      </dd>
+    </div>
+  )
+}
+
+function UnavailableSetting({ label, detail }: { label: string; detail: string }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-surface-soft p-3">
-      <div><p className="text-xs font-semibold text-ink">{label}</p><p className="mt-1 text-[11px] leading-4 text-ink-muted">{detail}</p></div>
+      <div>
+        <p className="text-xs font-semibold text-ink">{label}</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">{detail}</p>
+      </div>
       <Badge tone="neutral">Unavailable</Badge>
     </div>
   )
@@ -680,27 +1214,167 @@ function PreferenceCheckbox({
 }) {
   return (
     <label className="flex items-start gap-2 text-xs text-ink">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 accent-maroon-700" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 accent-maroon-700"
+      />
       {children}
     </label>
   )
 }
 
-function LifecycleSummary({
-  title,
-  detail,
-  tone,
+function ReviewStage({
+  publishedCount,
+  onGoToGeneration,
 }: {
-  title: string
-  detail: string
-  tone: 'info' | 'warning' | 'success'
+  publishedCount: number
+  onGoToGeneration: () => void
 }) {
-  const label = tone === 'info' ? 'Not generated' : tone === 'warning' ? 'Unavailable' : 'Protected'
   return (
-    <div className="rounded-lg border border-line p-3">
-      <Badge tone={tone}>{label}</Badge>
-      <p className="mt-2 text-sm font-semibold text-ink">{title}</p>
-      <p className="mt-1 text-xs leading-5 text-ink-muted">{detail}</p>
+    <Card>
+      <EmptyState
+        icon={CalendarDays}
+        title="No generated timetable to review"
+        description="A generated candidate will appear here as a filterable weekly timetable. The current published timetable remains active while no candidate exists."
+        action={(
+          <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+            Go to generation setup
+          </Button>
+        )}
+      />
+      <div className="border-t border-line px-6 py-4">
+        <p className="text-xs leading-5 text-ink-muted">
+          The review stage will include the master timetable, unscheduled-meeting diagnostics, professor workload, room utilization, and a published-baseline comparison.
+          {publishedCount ? ` ${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} are currently active.` : ''}
+        </p>
+      </div>
+    </Card>
+  )
+}
+
+function ApprovalStage({
+  publishedCount,
+  draftCount,
+  inventoryLoading,
+  inventoryError,
+}: {
+  publishedCount: number
+  draftCount: number
+  inventoryLoading: boolean
+  inventoryError: string | null
+}) {
+  const publishedBadge = inventoryLoading
+    ? 'Checking'
+    : inventoryError
+      ? 'Unavailable'
+      : publishedCount
+        ? 'Active'
+        : 'None'
+  const publishedTone: BadgeTone = inventoryLoading
+    ? 'info'
+    : inventoryError
+      ? 'neutral'
+      : publishedCount
+        ? 'success'
+        : 'neutral'
+  const publishedDetail = inventoryLoading
+    ? 'Loading the published timetable…'
+    : inventoryError
+      ? 'The published timetable could not be loaded.'
+      : publishedCount
+        ? `${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} remain active.`
+        : 'No published timetable exists for this term yet.'
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader className="py-4">
+          <h2 className="text-sm font-semibold text-ink">Candidate lifecycle</h2>
+          <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+            A candidate moves through generation, review, approval, and publication. Only the published timetable affects live records.
+          </p>
+        </CardHeader>
+        <ol className="divide-y divide-line">
+          <LifecycleRow
+            index={1}
+            title="Generated candidate"
+            badge="Not generated"
+            tone="neutral"
+            detail="No complete-semester generation has produced a candidate."
+          />
+          <LifecycleRow
+            index={2}
+            title="Draft candidate"
+            badge="Unavailable"
+            tone="neutral"
+            detail={`Saving a candidate is not available yet. ${draftCount} existing draft schedule record${draftCount === 1 ? '' : 's'} are preserved and are not selected for replacement by default.`}
+          />
+          <LifecycleRow
+            index={3}
+            title="Approved candidate"
+            badge="Unavailable"
+            tone="neutral"
+            detail="Approval actions and authorized approver roles are not available yet."
+          />
+          <LifecycleRow
+            index={4}
+            title="Published timetable"
+            badge={publishedBadge}
+            tone={publishedTone}
+            detail={publishedDetail}
+          />
+        </ol>
+      </Card>
+
+      <p className="flex items-start gap-2 text-xs leading-5 text-ink-muted">
+        <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        The current published timetable remains active while a candidate is reviewed. Nothing on this page overwrites, deletes, or automatically replaces published schedules or drafts.
+      </p>
     </div>
   )
+}
+
+function LifecycleRow({
+  index,
+  title,
+  badge,
+  tone,
+  detail,
+}: {
+  index: number
+  title: string
+  badge: string
+  tone: BadgeTone
+  detail: string
+}) {
+  return (
+    <li className="flex items-start gap-3 px-5 py-4">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface-soft text-xs font-semibold text-ink-muted">
+        {index}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-ink">{title}</p>
+          <Badge tone={tone}>{badge}</Badge>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-ink-muted">{detail}</p>
+      </div>
+    </li>
+  )
+}
+
+function stateClasses(state: ReadinessState): string {
+  if (state === 'ready') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (state === 'warning') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (state === 'blocked') return 'border-red-200 bg-red-50 text-red-700'
+  return 'border-line bg-white text-ink-muted'
+}
+
+function StateIcon({ state, className }: { state: ReadinessState; className?: string }) {
+  if (state === 'ready') return <Check className={className} aria-hidden="true" />
+  if (state === 'checking') return <RefreshCw className={cn(className, 'animate-spin')} aria-hidden="true" />
+  if (state === 'warning' || state === 'blocked') return <AlertTriangle className={className} aria-hidden="true" />
+  return <CircleHelp className={className} aria-hidden="true" />
 }

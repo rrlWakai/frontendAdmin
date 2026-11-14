@@ -113,6 +113,12 @@ function statusTone(status: ScheduleRecord['status']): 'neutral' | 'success' | '
   return 'neutral'
 }
 
+function termStatusTone(status: AcademicTerm['status'] | undefined): 'success' | 'warning' | 'neutral' {
+  if (status === 'active') return 'success'
+  if (status === 'planned') return 'warning'
+  return 'neutral'
+}
+
 function formatDay(day: number): string {
   return days.find((item) => item.value === day)?.label ?? 'Unknown day'
 }
@@ -436,28 +442,56 @@ export function SchedulingPage() {
   }
 
   const selectedOffering = options?.offerings.find((offering) => offering.id === selected?.subject_offering_id)
+  const currentTerm = terms.find((item) => item.id === termId)
+  const activeConflictCount = conflicts.filter((conflict) => conflict.status === 'open').length
 
   return (
     <div>
       <PageHeader
         eyebrow="Academic operations"
         title="Scheduling"
-        description="Manage manual schedule changes or review the complete-semester intelligent scheduling workflow."
-        actions={workspaceMode === 'manual' ? (
-          <Button
-            onClick={() => {
-              setError(null)
-              setCreateOpen((open) => !open)
-            }}
-            leftIcon={<Plus className="size-4" aria-hidden="true" />}
-            disabled={!termId || !options?.offerings.length}
-          >
-            New schedule
-          </Button>
-        ) : undefined}
+        description="Manage the published timetable manually or prepare a complete-semester schedule with AI."
+        actions={(
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+            <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
+              Academic term
+              <select
+                value={termId ?? ''}
+                onChange={(event) => {
+                  setTermId(Number(event.target.value) || null)
+                  setPage(1)
+                  setSelected(null)
+                  setConflictPreview([])
+                  setNewSchedule((current) => ({ ...current, subject_offering_id: 0 }))
+                }}
+                className="mt-1.5 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
+              >
+                {terms.map((term) => (
+                  <option key={term.id} value={term.id}>
+                    {term.academic_year} · {term.name}{term.is_current ? ' (Current)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex flex-wrap items-center gap-2 sm:pb-1">
+              <Badge tone={termStatusTone(currentTerm?.status)}>
+                {currentTerm ? `${currentTerm.status} term` : 'No academic term'}
+              </Badge>
+              {termId ? (
+                activeConflictCount ? (
+                  <Badge tone="warning">
+                    {activeConflictCount} open conflict{activeConflictCount === 1 ? '' : 's'}
+                  </Badge>
+                ) : (
+                  <Badge tone="success">No open conflicts</Badge>
+                )
+              ) : null}
+            </div>
+          </div>
+        )}
       />
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="inline-flex w-fit rounded-xl border border-line bg-surface-soft p-1" role="tablist" aria-label="Scheduling mode">
           <button
             type="button"
@@ -492,26 +526,18 @@ export function SchedulingPage() {
             Intelligent AI scheduling
           </button>
         </div>
-        <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
-          Academic term
-          <select
-            value={termId ?? ''}
-            onChange={(event) => {
-              setTermId(Number(event.target.value) || null)
-              setPage(1)
-              setSelected(null)
-              setConflictPreview([])
-              setNewSchedule((current) => ({ ...current, subject_offering_id: 0 }))
+        {workspaceMode === 'manual' ? (
+          <Button
+            onClick={() => {
+              setError(null)
+              setCreateOpen((open) => !open)
             }}
-            className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
+            leftIcon={<Plus className="size-4" aria-hidden="true" />}
+            disabled={!termId || !options?.offerings.length}
           >
-            {terms.map((term) => (
-              <option key={term.id} value={term.id}>
-                {term.academic_year} · {term.name}{term.is_current ? ' (Current)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+            New schedule
+          </Button>
+        ) : null}
       </div>
 
       {workspaceMode === 'manual' && error ? (
@@ -541,6 +567,7 @@ export function SchedulingPage() {
               term={terms.find((item) => item.id === termId)}
               options={options}
               optionsLoading={loading}
+              loadError={workspaceMode === 'ai' ? error : null}
               conflicts={conflicts}
             />
           </Suspense>
