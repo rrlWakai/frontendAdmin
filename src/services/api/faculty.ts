@@ -1,5 +1,6 @@
 import type { ApiSuccessResponse } from '@/types/api'
 import type {
+  FacultyAvailabilityBatchInput,
   FacultyAvailabilityInput,
   FacultyAvailabilityRecord,
   FacultyDetail,
@@ -73,6 +74,18 @@ export async function createFacultyAvailability(
   )
 
   return data.data.availability
+}
+
+export async function createFacultyAvailabilityBatch(
+  professorId: number,
+  input: FacultyAvailabilityBatchInput,
+): Promise<FacultyAvailabilityRecord[]> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ availabilities: FacultyAvailabilityRecord[] }>>(
+    `/faculty/${professorId}/availability`,
+    input,
+  )
+
+  return data.data.availabilities
 }
 
 export async function updateFacultyAvailability(

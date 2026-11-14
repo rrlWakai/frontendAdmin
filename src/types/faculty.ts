@@ -104,6 +104,19 @@ export interface FacultyAvailabilityInput {
   notes: string | null
 }
 
+export interface FacultyAvailabilityWindowInput {
+  day_of_week: number
+  start_time: string
+  end_time: string
+  availability_type: FacultyAvailabilityRecord['availability_type']
+  notes: string | null
+}
+
+export interface FacultyAvailabilityBatchInput {
+  academic_term_id: number
+  windows: FacultyAvailabilityWindowInput[]
+}
+
 export interface OwnProfessorInput {
   employee_number?: string
   program_id?: number | null

@@ -13,6 +13,7 @@ import { UserFormDialog } from '@/components/users/UserFormDialog'
 import { useAuth } from '@/hooks/useAuth'
 import {
   createFacultyAvailability,
+  createFacultyAvailabilityBatch,
   deleteFacultyAvailability,
   fetchFaculty,
   fetchProfessor,
@@ -34,6 +35,7 @@ import type {
   UserOptions,
 } from '@/types/users'
 import type {
+  FacultyAvailabilityBatchInput,
   FacultyAvailabilityInput,
   FacultyAvailabilityRecord,
   FacultyDetail,
@@ -246,12 +248,25 @@ export function FacultyPage() {
     })
   }
 
-  async function handleAvailabilitySave(input: FacultyAvailabilityInput) {
+  async function handleAvailabilitySave(
+    input: FacultyAvailabilityInput | FacultyAvailabilityBatchInput,
+  ) {
     if (!selectedProfessor || !availabilityDraft) return
     if (availabilityDraft === 'new') {
-      await createFacultyAvailability(selectedProfessor.id, input)
-      setSuccess('Faculty availability created.')
+      if ('windows' in input) {
+        try {
+          const created = await createFacultyAvailabilityBatch(selectedProfessor.id, input)
+          setSuccess(`${created.length} faculty availability window${created.length === 1 ? '' : 's'} created.`)
+        } catch (failure) {
+          refreshDetails()
+          throw failure
+        }
+      } else {
+        await createFacultyAvailability(selectedProfessor.id, input)
+        setSuccess('Faculty availability created.')
+      }
     } else {
+      if ('windows' in input) throw new Error('Batch availability cannot update an existing window.')
       await updateFacultyAvailability(availabilityDraft.id, input)
       setSuccess('Faculty availability updated.')
     }
@@ -513,10 +528,15 @@ export function FacultyPage() {
 
       {selectedProfessor && availabilityDraft !== null ? (
         <FacultyAvailabilityDialog
+          key={availabilityDraft === 'new' ? 'new' : availabilityDraft.id}
           availability={availabilityDraft === 'new' ? null : availabilityDraft}
+          savedAvailability={professorDetail?.availability ?? []}
+          professorName={selectedProfessor.name}
           terms={academicOptions?.terms ?? []}
           onCancel={() => setAvailabilityDraft(null)}
           onSubmit={handleAvailabilitySave}
+          onEditSaved={(availability) => setAvailabilityDraft(availability)}
+          onDeleteSaved={(availability) => void handleAvailabilityDelete(availability)}
         />
       ) : null}
 
