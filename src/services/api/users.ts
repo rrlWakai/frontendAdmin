@@ -16,6 +16,12 @@ export interface UserFilters {
   per_page?: number
 }
 
+export type ProfessorReviewAction = 'approve' | 'return' | 'reject'
+
+export async function createDepartment(input: { code: string; name: string }): Promise<void> {
+  await apiClient.post('/users/departments', input)
+}
+
 export async function fetchUsers(filters: UserFilters): Promise<UserDirectory> {
   const { data } = await apiClient.get<ApiSuccessResponse<UserDirectory>>('/users', {
     params: filters,
@@ -28,6 +34,14 @@ export async function fetchUserOptions(): Promise<UserOptions> {
   const { data } = await apiClient.get<ApiSuccessResponse<UserOptions>>('/users/options')
 
   return data.data
+}
+
+export async function fetchUser(id: number): Promise<ManagedUser> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ user: ManagedUser }>>(
+    `/users/${id}`,
+  )
+
+  return data.data.user
 }
 
 export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
@@ -58,6 +72,24 @@ export async function updateUserStatus(
   const { data } = await apiClient.patch<ApiSuccessResponse<{ user: ManagedUser }>>(
     `/users/${id}/status`,
     { status },
+  )
+
+  return data.data.user
+}
+
+export async function reviewProfessorRegistration(
+  id: number,
+  action: ProfessorReviewAction,
+  reason?: string,
+): Promise<ManagedUser> {
+  const endpoint = {
+    approve: 'approve-professor',
+    return: 'return-professor',
+    reject: 'reject-professor',
+  }[action]
+  const { data } = await apiClient.post<ApiSuccessResponse<{ user: ManagedUser }>>(
+    `/users/${id}/${endpoint}`,
+    reason ? { reason } : {},
   )
 
   return data.data.user

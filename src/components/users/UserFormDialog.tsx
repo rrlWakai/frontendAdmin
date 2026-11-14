@@ -378,10 +378,10 @@ export function UserFormDialog({
               <TextField
                 label="Employee number"
                 name="employee_number"
-                required
                 maxLength={32}
                 value={values.employee_number}
                 error={firstError(fieldErrors, 'profile.employee_number')}
+                hint="Required before a pending professor registration can be approved."
                 onChange={(event) => updateField('employee_number', event.target.value)}
               />
               <div className="space-y-1.5">

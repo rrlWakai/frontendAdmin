@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Plus, Search, UserRoundCog } from 'lucide-react'
+import { Building2, Check, ChevronLeft, ChevronRight, Search, UserRoundCog } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
@@ -8,16 +8,21 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { TextField } from '@/components/common/TextField'
 import { UserFormDialog } from '@/components/users/UserFormDialog'
+import { ProfessorRegistrationReviewDialog } from '@/components/users/ProfessorRegistrationReviewDialog'
+import { DepartmentManagerDialog } from '@/components/users/DepartmentManagerDialog'
 import { DepartmentPersonnelProgramAccessDialog } from '@/components/users/DepartmentPersonnelProgramAccessDialog'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  createUser,
+  fetchUser,
   fetchUserOptions,
   fetchUsers,
+  createDepartment,
+  reviewProfessorRegistration,
   updateDepartmentPersonnelProgramAccess,
   updateUser,
   updateUserStatus,
 } from '@/services/api/users'
+import type { ProfessorReviewAction } from '@/services/api/users'
 import type {
   AccountFormSubmission,
   ManagedRole,
@@ -36,7 +41,7 @@ const roleLabels: Record<ManagedRole, string> = {
 
 function statusTone(status: ManagedUser['status']) {
   if (status === 'active') return 'success'
-  if (status === 'suspended') return 'danger'
+  if (status === 'suspended' || status === 'rejected') return 'danger'
   return 'neutral'
 }
 
@@ -57,6 +62,12 @@ export function UsersPage() {
   const [page, setPage] = useState(1)
   const [lastPage, setLastPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [overview, setOverview] = useState<{
+    total_accounts: number
+    active_accounts: number
+    pending_approvals: number
+    deactivated_accounts: number
+  } | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
@@ -68,6 +79,9 @@ export function UsersPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [dialogUser, setDialogUser] = useState<ManagedUser | null | undefined>()
   const [programAccessUser, setProgramAccessUser] = useState<ManagedUser | null>(null)
+  const [reviewUser, setReviewUser] = useState<ManagedUser | null>(null)
+  const [isManagingDepartments, setIsManagingDepartments] = useState(false)
+  const [isLoadingReview, setIsLoadingReview] = useState(false)
   const [busyUserId, setBusyUserId] = useState<number | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [optionsVersion, setOptionsVersion] = useState(0)
@@ -124,6 +138,7 @@ export function UsersPage() {
           setAccounts(result.users)
           setLastPage(result.pagination.last_page)
           setTotal(result.pagination.total)
+          setOverview(result.overview)
         }
       } catch (loadFailure) {
         if (active) {
@@ -160,17 +175,7 @@ export function UsersPage() {
       await updateUser(dialogUser.id, update)
       setSuccess('Account changes saved.')
     } else {
-      if (!input.role || !input.password || !input.password_confirmation) {
-        throw new Error('Choose a role and enter a confirmed password.')
-      }
-
-      await createUser({
-        ...input,
-        role: input.role,
-        password: input.password,
-        password_confirmation: input.password_confirmation,
-      })
-      setSuccess('Account created.')
+      throw new Error('Account creation is not available from this directory.')
     }
 
     setDialogUser(undefined)
@@ -184,6 +189,33 @@ export function UsersPage() {
     setSuccess(`Attendance program access updated for ${programAccessUser.name}.`)
     setProgramAccessUser(null)
     refreshAccounts()
+  }
+
+  async function handleReviewAction(action: ProfessorReviewAction, reason?: string) {
+    if (!reviewUser) return
+
+    await reviewProfessorRegistration(reviewUser.id, action, reason)
+    setSuccess(`Professor registration ${action === 'approve' ? 'approved' : action === 'return' ? 'returned for correction' : 'rejected'}.`)
+    setReviewUser(null)
+    refreshAccounts()
+  }
+
+  async function handleAddDepartment(input: { code: string; name: string }) {
+    await createDepartment(input)
+    setSuccess(`${input.name} was added to the department options.`)
+    setOptionsVersion((version) => version + 1)
+  }
+
+  async function openReview(account: ManagedUser) {
+    setIsLoadingReview(true)
+    setError(null)
+    try {
+      setReviewUser(await fetchUser(account.id))
+    } catch (reviewFailure) {
+      setError(getApiErrorMessage(reviewFailure, 'Unable to load professor registration details.'))
+    } finally {
+      setIsLoadingReview(false)
+    }
   }
 
   async function handleStatusChange(account: ManagedUser) {
@@ -228,21 +260,37 @@ export function UsersPage() {
         eyebrow="People directory"
         title="Users & access"
         description="Manage account access and the identity records used by the academic workspaces."
-        actions={
-          isAdministrator ? (
-            <Button
-              onClick={() => {
-                setSuccess(null)
-                setDialogUser(null)
-              }}
-              disabled={isLoadingOptions || Boolean(optionsError)}
-              leftIcon={<Plus className="size-4" aria-hidden="true" />}
-            >
-              Create account
-            </Button>
-          ) : null
-        }
+        actions={isAdministrator ? (
+          <Button
+            variant="outline"
+            disabled={isLoadingOptions || !options}
+            onClick={() => setIsManagingDepartments(true)}
+            leftIcon={<Building2 className="size-4" aria-hidden="true" />}
+          >
+            Departments
+          </Button>
+        ) : null}
       />
+
+      {isAdministrator && overview ? (
+        <Card className="mb-5">
+          <CardBody>
+            <div className="grid grid-cols-2 divide-x divide-line md:grid-cols-4">
+              {[
+                ['Total accounts', overview.total_accounts],
+                ['Active', overview.active_accounts],
+                ['Pending approvals', overview.pending_approvals],
+                ['Deactivated', overview.deactivated_accounts],
+              ].map(([label, count]) => (
+                <div key={label} className="px-4 py-1 first:pl-0 last:pr-0">
+                  <p className="text-xs text-ink-muted">{label}</p>
+                  <p className="mt-1 text-xl font-semibold text-ink">{count}</p>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {success ? (
         <div
@@ -330,6 +378,9 @@ export function UsersPage() {
               >
                 <option value="">All statuses</option>
                 <option value="active">Active</option>
+                <option value="pending_approval">Pending approval</option>
+                <option value="needs_correction">Needs correction</option>
+                <option value="rejected">Rejected</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
               </select>
@@ -365,22 +416,12 @@ export function UsersPage() {
                     ? 'Try adjusting the search or filters.'
                     : 'Accounts will appear here when they are created.'
                 }
-                action={
-                  isAdministrator ? (
-                    <Button
-                      onClick={() => setDialogUser(null)}
-                      leftIcon={<Plus className="size-4" aria-hidden="true" />}
-                    >
-                      Create account
-                    </Button>
-                  ) : undefined
-                }
               />
             </div>
           ) : !error ? (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Account</th>
@@ -412,14 +453,26 @@ export function UsersPage() {
                               <>
                                 <p>{account.profile.student_number}</p>
                                 <p className="mt-1">
-                                  {account.profile.program?.code ?? 'No program'}
+                                  {account.profile.program
+                                    ? `${account.profile.program.code} · ${account.profile.program.name}`
+                                    : 'No program'}
+                                  {' · '}
+                                  {account.profile.year_level?.name ?? 'No year level'}
+                                  {' · '}
+                                  {account.profile.section?.code ?? 'No section'}
                                 </p>
                               </>
                             ) : account.profile?.type === 'professor' ? (
                               <>
-                                <p>{account.profile.employee_number}</p>
+                                <p>{account.profile.employment_type.replace('_', '-')} Professor</p>
                                 <p className="mt-1">
-                                  {account.profile.program?.code ?? 'No program'}
+                                  {account.profile.department_affiliation === 'ccs'
+                                    ? 'CCS'
+                                    : account.profile.department_affiliation === 'other'
+                                      ? 'Other department'
+                                      : 'Affiliation not recorded'}
+                                  {' · '}
+                                  {account.profile.department?.name ?? 'No department'}
                                 </p>
                               </>
                             ) : account.role.code === 'department_personnel' ? (
@@ -436,7 +489,9 @@ export function UsersPage() {
                             )}
                           </td>
                           <td className="px-4 py-4">
-                            <Badge tone={statusTone(account.status)}>{account.status}</Badge>
+                            <Badge tone={statusTone(account.status)}>
+                              {account.status.replace(/_/g, ' ')}
+                            </Badge>
                           </td>
                           <td className="px-4 py-4 text-xs text-ink-muted">
                             {formatLastLogin(account.last_login_at)}
@@ -465,19 +520,35 @@ export function UsersPage() {
                                 >
                                   Edit
                                 </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant={account.status === 'active' ? 'danger' : 'secondary'}
-                                  disabled={busyUserId === account.id || cannotDeactivateSelf}
-                                  onClick={() => void handleStatusChange(account)}
-                                >
-                                  {busyUserId === account.id
-                                    ? 'Saving…'
-                                    : account.status === 'active'
-                                      ? 'Deactivate'
-                                      : 'Activate'}
-                                </Button>
+                                {isAdministrator &&
+                                account.role.code === 'professor' &&
+                                account.status === 'pending_approval' ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={isLoadingReview}
+                                    onClick={() => void openReview(account)}
+                                  >
+                                    {isLoadingReview ? 'Loading…' : 'Review'}
+                                  </Button>
+                                ) : null}
+                                {!(account.role.code === 'professor' &&
+                                  ['pending_approval', 'needs_correction', 'rejected'].includes(account.status)) ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={account.status === 'active' ? 'danger' : 'secondary'}
+                                    disabled={busyUserId === account.id || cannotDeactivateSelf}
+                                    onClick={() => void handleStatusChange(account)}
+                                  >
+                                    {busyUserId === account.id
+                                      ? 'Saving…'
+                                      : account.status === 'active'
+                                        ? 'Deactivate'
+                                        : 'Activate'}
+                                  </Button>
+                                ) : null}
                               </div>
                               {cannotDeactivateSelf ? (
                                 <p className="max-w-48 text-right text-xs leading-5 text-ink-muted">
@@ -533,6 +604,20 @@ export function UsersPage() {
           programs={options.programs}
           onCancel={() => setDialogUser(undefined)}
           onSubmit={handleSave}
+        />
+      ) : null}
+      {reviewUser ? (
+        <ProfessorRegistrationReviewDialog
+          user={reviewUser}
+          onClose={() => setReviewUser(null)}
+          onAction={handleReviewAction}
+        />
+      ) : null}
+      {isManagingDepartments && options ? (
+        <DepartmentManagerDialog
+          departments={options.departments}
+          onClose={() => setIsManagingDepartments(false)}
+          onAdd={handleAddDepartment}
         />
       ) : null}
       {programAccessUser && options ? (

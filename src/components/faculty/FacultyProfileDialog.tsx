@@ -77,7 +77,7 @@ export function FacultyProfileDialog({
             </h2>
             {professor ? (
               <p className="mt-1 text-sm text-ink-muted">
-                {professor.employee_number} · {professor.program?.code ?? 'No program'}
+                {professor.employee_number ?? 'No employee number'} · {professor.program?.code ?? 'No program'}
               </p>
             ) : null}
           </div>
@@ -126,7 +126,9 @@ export function FacultyProfileDialog({
             <section className="grid gap-4 rounded-xl border border-line bg-stone-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <p className="text-xs font-medium text-ink-muted">Employee number</p>
-                <p className="mt-1 text-sm font-semibold text-ink">{professor.employee_number}</p>
+                <p className="mt-1 text-sm font-semibold text-ink">
+                  {professor.employee_number ?? 'Not assigned'}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-ink-muted">Email</p>

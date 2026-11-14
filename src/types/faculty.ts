@@ -21,7 +21,7 @@ export interface FacultyDirectoryRecord {
   name: string
   email: string
   account_status: AccountStatus
-  employee_number: string
+  employee_number: string | null
   employment_type: 'full_time' | 'part_time' | 'visiting'
   specialization: string | null
   profile_status: string

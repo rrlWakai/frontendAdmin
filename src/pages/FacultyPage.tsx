@@ -68,7 +68,7 @@ function toManagedUser(professor: FacultyDetail): ManagedUser {
     program_access: [],
     profile: {
       type: 'professor',
-      employee_number: professor.employee_number,
+      employee_number: professor.employee_number ?? '',
       employment_type: professor.employment_type,
       specialization: professor.specialization,
       program,
@@ -405,7 +405,7 @@ export function FacultyPage() {
                         <td className="px-4 py-4">
                           <p className="font-semibold text-ink">{professor.name}</p>
                           <p className="mt-0.5 text-xs text-ink-muted">
-                            {professor.employee_number} · {professor.email}
+                            {professor.employee_number ?? 'No employee number'} · {professor.email}
                           </p>
                           <p className="mt-1 text-xs text-ink-muted">{professor.specialization || 'No specialization listed'}</p>
                         </td>
