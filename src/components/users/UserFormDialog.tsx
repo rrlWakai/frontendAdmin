@@ -46,7 +46,7 @@ function initialValues(user: ManagedUser | null, defaultRole?: ManagedRole): For
     password_confirmation: '',
     role: user?.role.code ?? defaultRole ?? '',
     student_number: profile?.type === 'student' ? profile.student_number : '',
-    employee_number: profile?.type === 'professor' ? profile.employee_number : '',
+    employee_number: profile?.type === 'professor' ? (profile.employee_number ?? '') : '',
     program_id: profile?.program ? String(profile.program.id) : '',
     admitted_on: profile?.type === 'student' ? (profile.admitted_on ?? '') : '',
     employment_type: profile?.type === 'professor' ? profile.employment_type : 'full_time',
