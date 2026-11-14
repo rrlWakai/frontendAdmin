@@ -603,7 +603,6 @@ export function IntelligentScheduleWorkspace({
           optionsLoading={optionsLoading}
           loadError={loadError}
           programCount={programCount}
-          yearLevelCount={yearLevelCount}
           sectionCount={sectionCount}
           offeringCount={configuredOfferings.length}
           hasCurrentAssignmentCheck={hasCurrentAssignmentCheck}
@@ -724,7 +723,6 @@ function OverviewStage({
   optionsLoading,
   loadError,
   programCount,
-  yearLevelCount,
   sectionCount,
   offeringCount,
   hasCurrentAssignmentCheck,
@@ -746,7 +744,6 @@ function OverviewStage({
   optionsLoading: boolean
   loadError?: string | null
   programCount: number
-  yearLevelCount: number
   sectionCount: number
   offeringCount: number
   hasCurrentAssignmentCheck: boolean
