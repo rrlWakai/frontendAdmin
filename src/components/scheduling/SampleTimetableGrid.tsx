@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { PreviewPlacement } from '@/components/scheduling/developmentScheduleFixture'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
+import { durationMinutes, filterPreviewPlacements, timeToMinutes } from '@/components/scheduling/schedulePreviewModel'
 
 const days = [
   { value: 1, label: 'Monday' },
@@ -11,11 +12,6 @@ const days = [
   { value: 6, label: 'Saturday' },
   { value: 7, label: 'Sunday' },
 ]
-
-function toMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number)
-  return hours * 60 + minutes
-}
 
 function formatTime(value: number): string {
   const hours = Math.floor(value / 60)
@@ -39,13 +35,7 @@ export function SampleTimetableGrid({ placements }: SampleTimetableGridProps) {
   const [selected, setSelected] = useState<PreviewPlacement | null>(null)
 
   const filtered = useMemo(
-    () => placements.filter((placement) => (
-      (!program || placement.programCode === program)
-      && (!yearLevel || placement.yearLevel === yearLevel)
-      && (!section || placement.sectionCode === section)
-      && (!professor || placement.professor === professor)
-      && (!room || placement.room === room)
-    )),
+    () => filterPreviewPlacements(placements, { program, yearLevel, section, professor, room }),
     [placements, program, professor, room, section, yearLevel],
   )
 
@@ -54,8 +44,8 @@ export function SampleTimetableGrid({ placements }: SampleTimetableGridProps) {
   const sections = [...new Set(placements.map((placement) => placement.sectionCode))].sort()
   const professors = [...new Set(placements.map((placement) => placement.professor))].sort()
   const rooms = [...new Set(placements.map((placement) => placement.room))].sort()
-  const firstMeeting = Math.min(...filtered.map((placement) => toMinutes(placement.startTime)))
-  const lastMeeting = Math.max(...filtered.map((placement) => toMinutes(placement.endTime)))
+  const firstMeeting = Math.min(...filtered.map((placement) => timeToMinutes(placement.startTime)))
+  const lastMeeting = Math.max(...filtered.map((placement) => timeToMinutes(placement.endTime)))
   const startBoundary = Number.isFinite(firstMeeting) ? Math.floor(firstMeeting / 60) * 60 : 8 * 60
   const endBoundary = Number.isFinite(lastMeeting) ? Math.ceil(lastMeeting / 60) * 60 : startBoundary + 60
   const pixelsPerMinute = 1.15
@@ -151,8 +141,8 @@ export function SampleTimetableGrid({ placements }: SampleTimetableGridProps) {
                     />
                   ))}
                   {filtered.filter((placement) => placement.day === day.value).map((placement) => {
-                    const start = toMinutes(placement.startTime)
-                    const end = toMinutes(placement.endTime)
+                    const start = timeToMinutes(placement.startTime)
+                    const end = timeToMinutes(placement.endTime)
                     const isLab = placement.meetingType === 'laboratory'
                     const label = `${placement.subjectCode}, ${placement.subjectTitle}, ${placement.sectionCode}, ${placement.professor}, ${placement.room}, ${formatTime(start)} to ${formatTime(end)}, ${placement.meetingType}${placement.combinedGroup ? `, ${placement.combinedGroup}` : ''}`
 
@@ -166,7 +156,7 @@ export function SampleTimetableGrid({ placements }: SampleTimetableGridProps) {
                         className={`absolute inset-x-1 z-10 overflow-hidden rounded-md border p-1.5 text-left text-[10px] leading-tight shadow-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-maroon-700 ${isLab ? 'border-blue-300 bg-blue-50 text-blue-950' : 'border-maroon-200 bg-maroon-50 text-maroon-950'}`}
                         style={{
                           top: (start - startBoundary) * pixelsPerMinute + 2,
-                          height: Math.max((end - start) * pixelsPerMinute - 4, 28),
+                          height: Math.max(durationMinutes(placement.startTime, placement.endTime) * pixelsPerMinute - 4, 28),
                         }}
                       >
                         <span className="block truncate font-bold">{placement.subjectCode} · {placement.sectionCode}</span>
@@ -196,7 +186,7 @@ export function SampleTimetableGrid({ placements }: SampleTimetableGridProps) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-semibold text-ink">{selected.subjectCode} · {selected.subjectTitle}</p>
-                <p className="mt-1 text-xs text-ink-muted">{days.find((day) => day.value === selected.day)?.label} · {formatTime(toMinutes(selected.startTime))}–{formatTime(toMinutes(selected.endTime))}</p>
+                <p className="mt-1 text-xs text-ink-muted">{days.find((day) => day.value === selected.day)?.label} · {formatTime(timeToMinutes(selected.startTime))}–{formatTime(timeToMinutes(selected.endTime))}</p>
               </div>
               <button type="button" className="text-xs font-semibold text-maroon-700 underline focus-visible:outline-2 focus-visible:outline-maroon-600" onClick={() => setSelected(null)}>Close details</button>
             </div>

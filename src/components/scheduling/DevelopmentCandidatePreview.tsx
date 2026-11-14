@@ -3,47 +3,22 @@ import { Badge } from '@/components/common/Badge'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { SampleTimetableGrid } from '@/components/scheduling/SampleTimetableGrid'
 import { developmentScheduleFixture } from '@/components/scheduling/developmentScheduleFixture'
+import type { BaselinePlacement } from '@/components/scheduling/schedulePreviewModel'
+import { comparePlacements, isCompleteCandidate } from '@/components/scheduling/schedulePreviewModel'
 
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-function describeChanges(
-  previous: (typeof developmentScheduleFixture.baseline)[number],
-  next: (typeof developmentScheduleFixture.candidate)[number],
-): string[] {
-  const changes: string[] = []
-  if (previous.day !== next.day) changes.push(`day: ${days[previous.day - 1]} → ${days[next.day - 1]}`)
-  if (previous.startTime !== next.startTime) changes.push(`start: ${previous.startTime} → ${next.startTime}`)
-  if (previous.endTime !== next.endTime) changes.push(`end: ${previous.endTime} → ${next.endTime}`)
-  if (previous.room !== next.room) changes.push(`room: ${previous.room} → ${next.room}`)
-  return changes
-}
-
 function formatPlacement(
-  placement: (typeof developmentScheduleFixture.baseline)[number] | (typeof developmentScheduleFixture.candidate)[number],
+  placement: BaselinePlacement | (typeof developmentScheduleFixture.candidate)[number],
 ): string {
   return `${days[placement.day - 1]}, ${placement.startTime}–${placement.endTime} · ${placement.room}`
 }
 
 export function DevelopmentCandidatePreview() {
   const { baseline, candidate, requiredMeetings, requiredOfferings, unscheduledMeetings } = developmentScheduleFixture
-  const baselineByMeeting = new Map<string, (typeof baseline)[number]>(
-    baseline.map((placement) => [placement.meetingId, placement]),
-  )
   const scheduledOfferingCount = new Set(candidate.map((placement) => placement.offeringId)).size
-  const complete = (
-    scheduledOfferingCount === requiredOfferings
-    && candidate.length === requiredMeetings
-    && unscheduledMeetings.length === 0
-  )
-  const comparison = candidate.map((placement) => {
-    const previous = baselineByMeeting.get(placement.meetingId)
-    return {
-      placement,
-      previous,
-      changes: previous ? describeChanges(previous, placement) : [],
-      kind: previous ? (describeChanges(previous, placement).length ? 'changed' : 'retained') : 'new',
-    } as const
-  })
+  const complete = isCompleteCandidate(candidate, requiredOfferings, requiredMeetings, unscheduledMeetings)
+  const comparison = comparePlacements(baseline, candidate)
   const retainedCount = comparison.filter((item) => item.kind === 'retained').length
   const changedCount = comparison.filter((item) => item.kind === 'changed').length
   const newCount = comparison.filter((item) => item.kind === 'new').length

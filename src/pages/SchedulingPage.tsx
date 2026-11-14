@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { isAxiosError } from 'axios'
 import {
   AlertTriangle,
@@ -20,7 +20,6 @@ import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
-import { IntelligentScheduleWorkspace } from '@/components/scheduling/IntelligentScheduleWorkspace'
 import { fetchAcademicDirectory } from '@/services/api/academic'
 import {
   allocateScheduleRoom,
@@ -50,6 +49,11 @@ import type {
   SchedulingOptions,
 } from '@/types/scheduling'
 import { cn } from '@/utils/cn'
+
+const IntelligentScheduleWorkspace = lazy(async () => {
+  const module = await import('@/components/scheduling/IntelligentScheduleWorkspace')
+  return { default: module.IntelligentScheduleWorkspace }
+})
 
 const days = [
   { value: 1, label: 'Monday', short: 'Mon' },
@@ -530,14 +534,16 @@ export function SchedulingPage() {
         hidden={workspaceMode !== 'ai'}
       >
         {workspaceMode === 'ai' ? (
-          <IntelligentScheduleWorkspace
-            key={termId ?? 'no-term'}
-            termId={termId}
-            term={terms.find((item) => item.id === termId)}
-            options={options}
-            optionsLoading={loading}
-            conflicts={conflicts}
-          />
+          <Suspense fallback={<div role="status" className="flex items-center gap-2 rounded-xl border border-line bg-white px-5 py-8 text-sm text-ink-muted"><RefreshCw className="size-4 animate-spin" aria-hidden="true" />Loading intelligent scheduling workspace…</div>}>
+            <IntelligentScheduleWorkspace
+              key={termId ?? 'no-term'}
+              termId={termId}
+              term={terms.find((item) => item.id === termId)}
+              options={options}
+              optionsLoading={loading}
+              conflicts={conflicts}
+            />
+          </Suspense>
         ) : null}
       </div>
       <div

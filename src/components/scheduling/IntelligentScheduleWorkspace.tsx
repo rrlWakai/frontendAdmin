@@ -30,6 +30,12 @@ interface AssignmentReadiness {
   professorsWithoutTermWindows: number
   fullTimeProfessors: number
   partTimeProfessors: number
+  professorProfiles: Array<{
+    id: number
+    name: string
+    employmentType: string
+    windows: Array<{ day: number; startTime: string; endTime: string; type: string }>
+  }>
 }
 
 interface IntelligentScheduleWorkspaceProps {
@@ -190,23 +196,37 @@ export function IntelligentScheduleWorkspace({
     let professorsWithoutTermWindows = 0
     let fullTimeProfessors = 0
     let partTimeProfessors = 0
+    const professorProfiles: AssignmentReadiness['professorProfiles'] = []
 
     for (let offset = 0; offset < professorIds.length; offset += batchSize) {
       const batch = professorIds.slice(offset, offset + batchSize)
       const results = await Promise.allSettled(batch.map((id) => fetchProfessor(id)))
-      results.forEach((result) => {
+      results.forEach((result, index) => {
         if (result.status === 'rejected') {
           profileFailures += 1
           return
         }
+        const professor = result.value
         profilesChecked += 1
-        if (result.value.availability.some((window) => window.academic_term_id === termId)) {
+        const termWindows = professor.availability.filter((window) => window.academic_term_id === termId)
+        if (termWindows.length) {
           professorsWithTermWindows += 1
         } else {
           professorsWithoutTermWindows += 1
         }
-        if (result.value.employment_type === 'full_time') fullTimeProfessors += 1
-        if (result.value.employment_type === 'part_time') partTimeProfessors += 1
+        if (professor.employment_type === 'full_time') fullTimeProfessors += 1
+        if (professor.employment_type === 'part_time') partTimeProfessors += 1
+        professorProfiles.push({
+          id: batch[index],
+          name: professor.name,
+          employmentType: professor.employment_type,
+          windows: termWindows.map((window) => ({
+            day: window.day_of_week,
+            startTime: window.start_time,
+            endTime: window.end_time,
+            type: window.availability_type,
+          })).sort((left, right) => left.day - right.day || left.startTime.localeCompare(right.startTime)),
+        })
       })
     }
 
@@ -221,6 +241,7 @@ export function IntelligentScheduleWorkspace({
       professorsWithoutTermWindows,
       fullTimeProfessors,
       partTimeProfessors,
+      professorProfiles,
     })
     if (summary.unavailable || profileFailures) {
       setAssignmentError(
@@ -295,7 +316,7 @@ export function IntelligentScheduleWorkspace({
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-700">Intelligent AI scheduling</p>
             <h2 className="mt-1 text-lg font-semibold text-ink">Complete-semester scheduling workspace</h2>
-            <p className="mt-1 text-xs text-ink-muted">{termName(term)} · All configured programs, year levels, sections, and offerings</p>
+            <p className="mt-1 text-xs text-ink-muted">{termName(term)} · Requested scope: the entire academic term</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={publishedSchedules.length ? 'success' : 'neutral'}>
@@ -392,6 +413,32 @@ export function IntelligentScheduleWorkspace({
                 : 'Existing faculty profiles expose recurring term availability and employment type, but those records have not been loaded.'}
               link={{ to: '/faculty', label: 'Faculty records' }}
             />
+            {hasCurrentAssignmentCheck && assignmentReadiness?.professorProfiles.length ? (
+              <details className="rounded-lg border border-line p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600">
+                  View recurring term availability ({assignmentReadiness.professorProfiles.length} professors)
+                </summary>
+                <div className="mt-3 space-y-3">
+                  {assignmentReadiness.professorProfiles.map((professor) => (
+                    <div key={professor.id} className="border-t border-line pt-3">
+                      <p className="text-xs font-semibold text-ink">{professor.name} · {professor.employmentType.replaceAll('_', ' ')}</p>
+                      {professor.windows.length ? (
+                        <ul className="mt-1 grid gap-1 text-[11px] text-ink-muted sm:grid-cols-2">
+                          {professor.windows.map((window, index) => (
+                            <li key={`${professor.id}-${window.day}-${window.startTime}-${index}`}>
+                              {formatScheduleDay(window.day)} · {window.startTime}–{window.endTime} · {window.type}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-[11px] text-ink-muted">No term-specific windows; unrestricted under the approved empty-availability rule.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-4 text-ink-muted">These are recurring weekly records from existing faculty profiles. No date-specific exceptions are exposed by the current API.</p>
+              </details>
+            ) : null}
             <ReadinessItem
               state="blocked"
               title="Full-time workday policy and exceptions"
@@ -444,7 +491,7 @@ export function IntelligentScheduleWorkspace({
             <CardBody className="space-y-4">
               <div className="rounded-lg border border-maroon-100 bg-maroon-50 p-3">
                 <p className="text-sm font-semibold text-maroon-900">Entire academic term</p>
-                <p className="mt-1 text-xs leading-5 text-maroon-900/80">All configured programs, year levels, sections, and subject offerings. Individual filters are for review only.</p>
+                <p className="mt-1 text-xs leading-5 text-maroon-900/80">The eventual generation must cover every required program, year level, section, and offering. The current API cannot certify that complete set; individual filters are for review only.</p>
               </div>
               <ConfigUnavailable label="Operating days, hours, and valid start boundaries" detail="Institution-configured and term-associated values are not available." />
               <ConfigUnavailable label="Meeting plans and room requirements" detail="Frequency, duration, meeting type, and required room type are not available." />
