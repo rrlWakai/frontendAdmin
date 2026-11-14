@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
+  BookOpenCheck,
   CalendarDays,
   CalendarRange,
   ClipboardCheck,
@@ -54,6 +55,7 @@ const navigation: NavigationGroup[] = [
       { label: 'Year levels', to: '/academic/year-levels', icon: Layers },
       { label: 'Subjects', to: '/subjects', icon: Library },
       { label: 'Sections', to: '/academic/sections', icon: UsersRound },
+      { label: 'Subject offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],
   },

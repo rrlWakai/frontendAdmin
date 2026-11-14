@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
@@ -19,6 +20,7 @@ import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
+import { IntelligentScheduleWorkspace } from '@/components/scheduling/IntelligentScheduleWorkspace'
 import { fetchAcademicDirectory } from '@/services/api/academic'
 import {
   allocateScheduleRoom,
@@ -112,6 +114,7 @@ function formatDay(day: number): string {
 }
 
 export function SchedulingPage() {
+  const [workspaceMode, setWorkspaceMode] = useState<'manual' | 'ai'>('manual')
   const [terms, setTerms] = useState<AcademicTerm[]>([])
   const [termId, setTermId] = useState<number | null>(null)
   const [options, setOptions] = useState<SchedulingOptions | null>(null)
@@ -435,8 +438,8 @@ export function SchedulingPage() {
       <PageHeader
         eyebrow="Academic operations"
         title="Scheduling"
-        description="Plan weekly classes, assign instructors and rooms, and resolve conflicts before publication."
-        actions={
+        description="Manage manual schedule changes or review the complete-semester intelligent scheduling workflow."
+        actions={workspaceMode === 'manual' ? (
           <Button
             onClick={() => {
               setError(null)
@@ -447,45 +450,106 @@ export function SchedulingPage() {
           >
             New schedule
           </Button>
-        }
+        ) : undefined}
       />
 
-      {error ? (
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="inline-flex w-fit rounded-xl border border-line bg-surface-soft p-1" role="tablist" aria-label="Scheduling mode">
+          <button
+            type="button"
+            role="tab"
+            id="manual-scheduling-tab"
+            aria-selected={workspaceMode === 'manual'}
+            aria-controls="manual-scheduling-panel"
+            onClick={() => {
+              setWorkspaceMode('manual')
+              setError(null)
+            }}
+            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'manual' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+          >
+            <CalendarDays className="size-4" aria-hidden="true" />
+            Manual scheduling
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="intelligent-scheduling-tab"
+            aria-selected={workspaceMode === 'ai'}
+            aria-controls="intelligent-scheduling-panel"
+            onClick={() => {
+              setWorkspaceMode('ai')
+              setCreateOpen(false)
+              setError(null)
+              setNotice(null)
+            }}
+            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'ai' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+          >
+            <Sparkles className="size-4" aria-hidden="true" />
+            Intelligent AI scheduling
+          </button>
+        </div>
+        <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
+          Academic term
+          <select
+            value={termId ?? ''}
+            onChange={(event) => {
+              setTermId(Number(event.target.value) || null)
+              setPage(1)
+              setSelected(null)
+              setConflictPreview([])
+              setNewSchedule((current) => ({ ...current, subject_offering_id: 0 }))
+            }}
+            className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
+          >
+            {terms.map((term) => (
+              <option key={term.id} value={term.id}>
+                {term.academic_year} · {term.name}{term.is_current ? ' (Current)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {workspaceMode === 'manual' && error ? (
         <div role="alert" className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <p>{error}</p>
         </div>
       ) : null}
-      {notice ? (
+      {workspaceMode === 'manual' && notice ? (
         <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <Check className="size-4" aria-hidden="true" />
           {notice}
         </div>
       ) : null}
 
+      <div
+        id="intelligent-scheduling-panel"
+        role="tabpanel"
+        aria-labelledby="intelligent-scheduling-tab"
+        hidden={workspaceMode !== 'ai'}
+      >
+        {workspaceMode === 'ai' ? (
+          <IntelligentScheduleWorkspace
+            key={termId ?? 'no-term'}
+            termId={termId}
+            term={terms.find((item) => item.id === termId)}
+            options={options}
+            optionsLoading={loading}
+            conflicts={conflicts}
+          />
+        ) : null}
+      </div>
+      <div
+        id="manual-scheduling-panel"
+        role="tabpanel"
+        aria-labelledby="manual-scheduling-tab"
+        hidden={workspaceMode !== 'manual'}
+      >
+      {workspaceMode === 'manual' ? (
+      <>
       <section className="mb-5 rounded-xl border border-line bg-white" aria-label="Schedule filters">
         <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-end">
-          <label className="block w-full text-xs font-semibold text-ink-muted lg:w-60">
-            Academic term
-            <select
-              value={termId ?? ''}
-              onChange={(event) => {
-                setTermId(Number(event.target.value) || null)
-                setPage(1)
-                setSelected(null)
-                setConflictPreview([])
-                setNewSchedule((current) => ({ ...current, subject_offering_id: 0 }))
-              }}
-              className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
-            >
-              {terms.map((term) => (
-                <option key={term.id} value={term.id}>
-                  {term.academic_year} · {term.name}{term.is_current ? ' (Current)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <label className="block w-full flex-1 text-xs font-semibold text-ink-muted">
             Search schedules
             <span className="relative mt-1.5 block">
@@ -1139,6 +1203,9 @@ export function SchedulingPage() {
           onConfirm={confirmDialog.onConfirm}
         />
       )}
+      </>
+      ) : null}
+      </div>
     </div>
   )
 }

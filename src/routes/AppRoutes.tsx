@@ -15,6 +15,7 @@ import { SchedulingPage } from '@/pages/SchedulingPage'
 import { SectionsPage } from '@/pages/SectionsPage'
 import { StudentsPage } from '@/pages/StudentsPage'
 import { StudentScheduleConflictsPage } from '@/pages/StudentScheduleConflictsPage'
+import { SubjectOfferingsPage } from '@/pages/SubjectOfferingsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { UnauthorizedPage } from '@/pages/UnauthorizedPage'
 import { UsersPage } from '@/pages/UsersPage'
@@ -70,6 +71,11 @@ const routes: RouteObject[] = [
             path: 'academic/sections',
             element: <SectionsPage />,
             handle: { title: 'Sections' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/subject-offerings',
+            element: <SubjectOfferingsPage />,
+            handle: { title: 'Subject offerings' } satisfies RouteHandle,
           },
           {
             path: 'scheduling',
