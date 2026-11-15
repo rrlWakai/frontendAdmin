@@ -19,8 +19,8 @@ const config: AcademicPageConfig<AcademicSubject> = {
     { name: 'title', label: 'Subject title', type: 'text', required: true, maxLength: 160 },
     { name: 'description', label: 'Description', type: 'textarea' },
     { name: 'units', label: 'Units', type: 'number', required: true, min: 0.1, max: 999.9, step: 0.1 },
-    { name: 'lecture_hours', label: 'Lecture hours', type: 'number', required: true, min: 0, max: 999.9, step: 0.1, defaultValue: '0' },
-    { name: 'lab_hours', label: 'Laboratory hours', type: 'number', required: true, min: 0, max: 999.9, step: 0.1, defaultValue: '0' },
+    { name: 'lecture_hours', label: 'Lecture hours', type: 'number', required: true, min: 0, max: 999.9, step: 0.1 },
+    { name: 'lab_hours', label: 'Laboratory hours', type: 'number', required: true, min: 0, max: 999.9, step: 0.1 },
     {
       name: 'status',
       label: 'Status',

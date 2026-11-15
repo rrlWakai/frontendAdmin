@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, GraduationCap, Search } from 'lucide-react'
 import { FacultyAvailabilityDialog } from '@/components/faculty/FacultyAvailabilityDialog'
 import { FacultyProfileDialog } from '@/components/faculty/FacultyProfileDialog'
+import { FacultyQuotaDialog } from '@/components/faculty/FacultyQuotaDialog'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
@@ -18,6 +19,7 @@ import {
   fetchFaculty,
   fetchProfessor,
   updateFacultyAvailability,
+  updateFacultyQuota,
 } from '@/services/api/faculty'
 import { fetchAcademicOptions } from '@/services/api/academic'
 import {
@@ -41,6 +43,8 @@ import type {
   FacultyDetail,
   FacultyDirectoryRecord,
   FacultyPagination,
+  FacultyWorkloadStatus,
+  FacultyWorkloadSummary,
 } from '@/types/faculty'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
@@ -48,6 +52,69 @@ function statusTone(status: string): 'success' | 'danger' | 'neutral' {
   if (status === 'active') return 'success'
   if (status === 'suspended') return 'danger'
   return 'neutral'
+}
+
+function formatWorkloadHours(value: number | null): string {
+  if (value === null) return '—'
+
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} h`
+}
+
+function workloadStatusLabel(status: FacultyWorkloadStatus): string {
+  switch (status) {
+    case 'within_quota':
+      return 'Within quota'
+    case 'at_quota':
+      return 'At quota'
+    case 'exceeds_quota':
+      return 'Exceeds quota'
+    case 'no_current_term':
+      return 'No current term'
+    case 'multiple_current_terms':
+      return 'Multiple current terms'
+    case 'incomplete':
+      return 'Incomplete workload'
+    default:
+      return 'Quota not configured'
+  }
+}
+
+function workloadStatusTone(
+  status: FacultyWorkloadStatus,
+): 'success' | 'warning' | 'danger' | 'neutral' {
+  switch (status) {
+    case 'within_quota':
+      return 'success'
+    case 'at_quota':
+      return 'warning'
+    case 'exceeds_quota':
+      return 'danger'
+    case 'no_current_term':
+    case 'multiple_current_terms':
+    case 'incomplete':
+      return 'warning'
+    default:
+      return 'neutral'
+  }
+}
+
+function workloadProgressWidth(workload: FacultyWorkloadSummary): number {
+  if (!workload.calculation_complete) return 0
+
+  const quota = workload.weekly_quota
+
+  if (quota === null) return 0
+  if (quota <= 0) return workload.assigned_hours > 0 ? 100 : 0
+
+  return Math.min(100, Math.max(0, (workload.assigned_hours / quota) * 100))
+}
+
+function workloadProgressTone(status: FacultyWorkloadStatus): string {
+  if (status === 'exceeds_quota') return 'bg-red-500'
+  if (status === 'at_quota') return 'bg-amber-500'
+  if (status === 'within_quota') return 'bg-emerald-500'
+
+  return 'bg-stone-300'
 }
 
 function toManagedUser(professor: FacultyDetail): ManagedUser {
@@ -81,6 +148,7 @@ function toManagedUser(professor: FacultyDetail): ManagedUser {
 export function FacultyPage() {
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
+  const canManageQuota = user?.role === 'administrator'
   const [faculty, setFaculty] = useState<FacultyDirectoryRecord[]>([])
   const [pagination, setPagination] = useState<FacultyPagination>({
     current_page: 1,
@@ -103,6 +171,7 @@ export function FacultyPage() {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [dialogUser, setDialogUser] = useState<ManagedUser | undefined>()
+  const [quotaTarget, setQuotaTarget] = useState<FacultyDetail | null>(null)
   const [availabilityDraft, setAvailabilityDraft] = useState<FacultyAvailabilityRecord | 'new' | null>(null)
   const [busyProfessorId, setBusyProfessorId] = useState<number | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
@@ -210,6 +279,16 @@ export function FacultyPage() {
     await updateUser(dialogUser.id, update)
     setSuccess('Faculty profile updated.')
     setDialogUser(undefined)
+    setRefreshVersion((version) => version + 1)
+    refreshDetails()
+  }
+
+  async function handleQuotaSave(quota: number | null) {
+    if (!quotaTarget) return
+
+    await updateFacultyQuota(quotaTarget.id, quota)
+    setSuccess(quota === null ? 'Weekly teaching-hour quota cleared.' : 'Weekly teaching-hour quota updated.')
+    setQuotaTarget(null)
     setRefreshVersion((version) => version + 1)
     refreshDetails()
   }
@@ -403,12 +482,13 @@ export function FacultyPage() {
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[820px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Faculty member</th>
                       <th className="px-4 py-3">Program</th>
                       <th className="px-4 py-3">Employment</th>
+                      <th className="px-4 py-3">Weekly workload</th>
                       <th className="px-4 py-3">Account status</th>
                       <th className="px-4 py-3">Profile status</th>
                       <th className="px-4 py-3 text-right">Action</th>
@@ -429,6 +509,41 @@ export function FacultyPage() {
                         </td>
                         <td className="px-4 py-4 capitalize text-ink-muted">
                           {professor.employment_type.replace('_', ' ')}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="w-40 space-y-1.5">
+                            <p className="text-sm font-medium text-ink">
+                              {formatWorkloadHours(professor.workload.assigned_hours)}
+                              <span className="font-normal text-ink-muted">
+                                {' / '}
+                                {professor.workload.weekly_quota === null
+                                  ? 'No quota'
+                                  : formatWorkloadHours(professor.workload.weekly_quota)}
+                              </span>
+                            </p>
+                            {professor.workload.weekly_quota === null ? null : (
+                              <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
+                                <div
+                                  className={`h-full rounded-full ${workloadProgressTone(professor.workload.status)}`}
+                                  style={{ width: `${workloadProgressWidth(professor.workload)}%` }}
+                                />
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-1.5">
+                              <Badge tone={workloadStatusTone(professor.workload.status)}>
+                                {workloadStatusLabel(professor.workload.status)}
+                              </Badge>
+                              {professor.workload.has_discrepancies ? (
+                                <Badge tone="warning">Schedule variance</Badge>
+                              ) : null}
+                            </div>
+                            {professor.workload.issues_count > 0 ? (
+                              <p className="text-[11px] font-medium text-amber-700">
+                                {professor.workload.issues_count} workload issue
+                                {professor.workload.issues_count === 1 ? '' : 's'} need attention
+                              </p>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           <Badge tone={statusTone(professor.account_status)}>{professor.account_status}</Badge>
@@ -494,13 +609,18 @@ export function FacultyPage() {
           isLoading={isDetailLoading}
           error={detailError}
           canEditProfile={Boolean(canManage && userOptions)}
+          canManageQuota={canManageQuota}
           isChangingStatus={busyProfessorId === selectedProfessor.id}
           onClose={() => {
             setSelectedProfessor(null)
             setProfessorDetail(null)
+            setQuotaTarget(null)
           }}
           onEditProfile={() => {
             if (canManage && professorDetail) setDialogUser(toManagedUser(professorDetail))
+          }}
+          onEditQuota={() => {
+            if (canManageQuota && professorDetail) setQuotaTarget(professorDetail)
           }}
           onToggleStatus={() => {
             if (canManage && professorDetail) void handleStatusChange(professorDetail)
@@ -523,6 +643,16 @@ export function FacultyPage() {
           programs={userOptions.programs}
           onCancel={() => setDialogUser(undefined)}
           onSubmit={handleProfileSave}
+        />
+      ) : null}
+
+      {quotaTarget ? (
+        <FacultyQuotaDialog
+          key={quotaTarget.id}
+          professorName={quotaTarget.name}
+          quota={quotaTarget.workload.weekly_quota}
+          onCancel={() => setQuotaTarget(null)}
+          onSubmit={handleQuotaSave}
         />
       ) : null}
 

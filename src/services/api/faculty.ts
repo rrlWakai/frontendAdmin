@@ -44,6 +44,18 @@ export async function updateOwnProfessor(input: OwnProfessorInput): Promise<Facu
   return data.data.professor
 }
 
+export async function updateFacultyQuota(
+  professorId: number,
+  weeklyTeachingHoursQuota: number | null,
+): Promise<FacultyDetail> {
+  const { data } = await apiClient.patch<ApiSuccessResponse<{ professor: FacultyDetail }>>(
+    `/faculty/${professorId}/quota`,
+    { weekly_teaching_hours_quota: weeklyTeachingHoursQuota },
+  )
+
+  return data.data.professor
+}
+
 export async function fetchProfessorAssignments(
   professorId: number,
 ): Promise<FacultyAssignmentRecord[]> {
