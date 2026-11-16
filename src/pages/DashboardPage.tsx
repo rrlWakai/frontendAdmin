@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarDays,
-  Clock,
+  CheckCircle2,
+  CircleDot,
   GraduationCap,
   Users,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/common/Badge";
-import { Card, CardHeader } from "@/components/common/Card";
+import { Button } from "@/components/common/Button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { fetchStudents } from "@/services/api/students";
 import { fetchFaculty } from "@/services/api/faculty";
@@ -16,54 +19,19 @@ import {
   fetchScheduleConflicts,
 } from "@/services/api/scheduling";
 import { fetchAcademicOptions } from "@/services/api/academic";
-import { cn } from "@/utils/cn";
-
-const CAMPUS_IMAGE = "/images/college.png";
-
-interface EnrollmentBar {
-  label: string;
-  value: number;
-}
-
-function EnrollmentBarChart({ bars }: { bars: EnrollmentBar[] }) {
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  return (
-    <div className="space-y-4">
-      {bars.map((bar) => {
-        const percent = (bar.value / max) * 100;
-        return (
-          <div key={bar.label} className="flex items-end gap-3">
-            <div className="flex-1 relative h-24">
-              <div
-                className="absolute bottom-0 h-full bg-maroon-600 rounded-t-lg transition-all duration-500"
-                style={{ width: `${percent}%` }}
-              />
-              <span className="absolute -top-6 right-0 text-[10px] font-medium text-ink-muted">
-                {bar.value}
-              </span>
-            </div>
-            <span className="w-16 text-[11px] font-medium text-ink">
-              {bar.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export function DashboardPage() {
   const [stats, setStats] = useState<{
     students: number;
     faculty: number;
-    schedules: number;
+    published: number;
+    drafts: number;
     conflicts: number;
-  }>({ students: 0, faculty: 0, schedules: 0, conflicts: 0 });
+  }>({ students: 0, faculty: 0, published: 0, drafts: 0, conflicts: 0 });
   const [terms, setTerms] = useState<
     Array<{
       id: number;
       academic_year: string;
-      term: string;
       name: string;
       is_current: boolean;
       status: string;
@@ -80,9 +48,7 @@ export function DashboardPage() {
       setError(null);
       try {
         const academicOptions = await fetchAcademicOptions();
-
         if (!active) return;
-
         setTerms(academicOptions.terms);
 
         const currentAcademicTerm =
@@ -93,45 +59,32 @@ export function DashboardPage() {
           fetchStudents({ per_page: 10 }),
           fetchFaculty({ per_page: 10 }),
         ]);
-
         if (!active) return;
 
         if (studentsResult.status === "fulfilled") {
-          setStats((s) => ({
-            ...s,
-            students: studentsResult.value.pagination.total,
-          }));
+          setStats((s) => ({ ...s, students: studentsResult.value.pagination.total }));
         }
         if (facultyResult.status === "fulfilled") {
-          setStats((s) => ({
-            ...s,
-            faculty: facultyResult.value.pagination.total,
-          }));
+          setStats((s) => ({ ...s, faculty: facultyResult.value.pagination.total }));
         }
 
         if (currentAcademicTerm) {
-          const [schedulesResult, conflictsResult] = await Promise.allSettled([
-            fetchSchedules({
-              academic_term_id: currentAcademicTerm.id,
-              status: "published",
-              per_page: 10,
-            }),
+          const [publishedResult, draftsResult, conflictsResult] = await Promise.allSettled([
+            fetchSchedules({ academic_term_id: currentAcademicTerm.id, status: "published", per_page: 1 }),
+            fetchSchedules({ academic_term_id: currentAcademicTerm.id, status: "draft", per_page: 1 }),
             fetchScheduleConflicts(currentAcademicTerm.id),
           ]);
-
           if (!active) return;
 
-          if (schedulesResult.status === "fulfilled") {
-            setStats((s) => ({
-              ...s,
-              schedules: schedulesResult.value.pagination.total,
-            }));
+          if (publishedResult.status === "fulfilled") {
+            setStats((s) => ({ ...s, published: publishedResult.value.pagination.total }));
+          }
+          if (draftsResult.status === "fulfilled") {
+            setStats((s) => ({ ...s, drafts: draftsResult.value.pagination.total }));
           }
           if (conflictsResult.status === "fulfilled") {
-            setStats((s) => ({
-              ...s,
-              conflicts: conflictsResult.value.conflicts.length,
-            }));
+            const open = conflictsResult.value.conflicts.filter((c) => c.status === "open").length;
+            setStats((s) => ({ ...s, conflicts: open }));
           }
         }
       } catch {
@@ -142,285 +95,161 @@ export function DashboardPage() {
     }
 
     void load();
-
     return () => {
       active = false;
     };
   }, []);
 
   const currentTerm = terms.find((t) => t.is_current) ?? terms[0];
-
-  const enrollmentBars: EnrollmentBar[] = [
-    { label: "Programs", value: Math.round((stats.students || 0) * 0.25) },
-    { label: "Year Levels", value: Math.round((stats.students || 0) * 0.2) },
-    { label: "Subjects", value: Math.round((stats.students || 0) * 0.35) },
-    { label: "Sections", value: Math.round((stats.students || 0) * 0.4) },
-  ];
-
-  const todayActivities = [
-    {
-      time: "07:30 AM",
-      label: "Morning classes begin",
-      detail: "12 sections in session",
-      type: "info",
-    },
-    {
-      time: "10:00 AM",
-      label: "Attendance check-in",
-      detail: "34 students checked in",
-      type: "success",
-    },
-    {
-      time: "12:30 PM",
-      label: "Schedule update",
-      detail: "Room reassignment for CS-101",
-      type: "warning",
-    },
-    {
-      time: "02:00 PM",
-      label: "Faculty availability",
-      detail: "5 professors updated schedules",
-      type: "info",
-    },
-  ];
+  const attention = [
+    stats.conflicts > 0
+      ? { label: `${stats.conflicts} open schedule conflict${stats.conflicts === 1 ? "" : "s"}`, to: "/scheduling", tone: "warning" as const }
+      : null,
+    stats.drafts > 0
+      ? { label: `${stats.drafts} draft schedule${stats.drafts === 1 ? "" : "s"} awaiting review`, to: "/scheduling", tone: "info" as const }
+      : null,
+    !currentTerm
+      ? { label: "No current academic term configured", to: "/academic/terms", tone: "warning" as const }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; to: string; tone: "warning" | "info" }>;
 
   return (
     <>
-      <div className="relative h-[420px] md:h-[520px] rounded-2xl border border-line overflow-hidden">
-        <img
-          src={CAMPUS_IMAGE}
-          alt="CCS Campus"
-          className="absolute inset-0 w-full h-full object-cover object-center"
-          onError={(event) => {
-            (event.target as HTMLImageElement).style.display = "none";
-          }}
-        />
-        <div className="absolute inset-0 bg-maroon-900/70 bg-linear-to-t from-maroon-900 via-transparent to-transparent" />
-        <div
-          className="absolute inset-0"
-          style={{
-            background: `radial-gradient(circle at 80% 20%, rgba(245, 185, 0, 0.15), transparent 50%), radial-gradient(circle at 20% 80%, rgba(101, 0, 31, 0.15), transparent 50%)`,
-          }}
-        />
-        <div className="relative z-10 p-6 md:p-10">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gold-300 mb-2">
-            ADMINISTRATION PORTAL
-          </p>
-          <h1 className="text-3xl md:text-5xl font-bold text-white tracking-tight mb-3 leading-tight">
-            Good day, Administrator!
-          </h1>
-          <p className="text-lg text-maroon-100/90 max-w-xl leading-relaxed">
-            Manage academic operations, people, and department activities all in
-            one place.
-          </p>
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description="Current term status, scheduling attention, and quick access to the Intelligent Scheduling workspace."
+        actions={
+          <Link to="/scheduling">
+            <Button leftIcon={<CalendarDays className="size-4" aria-hidden="true" />}>
+              Open schedule
+            </Button>
+          </Link>
+        }
+      />
+
+      {error ? (
+        <div role="alert" className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
         </div>
-      </div>
+      ) : null}
 
-      <div className="mt-8">
-        <PageHeader
-          eyebrow="Overview"
-          title="Academic operations, coordinated."
-          description="The CCSync administrative workspace. Module workflows are enabled as academic data is delivered."
-          actions={<Badge tone="maroon">Phase 3</Badge>}
-        />
-
-        {/* Statistics Overview */}
-        <div className="mb-8 border border-line rounded-xl bg-white p-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {[
-              {
-                label: "Active Students",
-                value: stats.students,
-                icon: Users,
-                tone: "maroon",
-              },
-              {
-                label: "Faculty Members",
-                value: stats.faculty,
-                icon: GraduationCap,
-                tone: "maroon",
-              },
-              {
-                label: "Published Schedules",
-                value: stats.schedules,
-                icon: CalendarDays,
-                tone: "maroon",
-              },
-              {
-                label: "Schedule Conflicts",
-                value: stats.conflicts,
-                icon: AlertTriangle,
-                tone: "warning",
-              },
-            ].map((item, index) => (
-              <div
-                key={item.label}
-                className={cn(
-                  "flex items-center gap-4 py-3 sm:py-0 sm:flex-col sm:items-start sm:gap-2",
-                  index < 3 ? "border-r border-line" : "",
-                )}
-              >
-                <div className="flex size-10 items-center justify-center rounded-lg bg-maroon-50 text-maroon-700">
-                  <item.icon className="size-5" aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
-                    {item.label}
-                  </p>
-                  <p className="mt-0.5 text-2xl font-bold text-ink">
-                    {item.value}
-                  </p>
-                </div>
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <section className="space-y-6">
+          <div className="rounded-xl border border-line bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">Current academic term</p>
+                <h2 className="mt-1 text-lg font-semibold text-ink">
+                  {loading ? "Loading…" : currentTerm ? `${currentTerm.academic_year} · ${currentTerm.name}` : "No current term"}
+                </h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Scheduling readiness and publication status for the active term.
+                </p>
               </div>
-            ))}
+              {currentTerm ? <Badge tone={currentTerm.status === "active" ? "success" : "warning"}>{currentTerm.status}</Badge> : null}
+            </div>
+
+            <dl className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div>
+                <dt className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                  <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden="true" /> Published schedules
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">{loading ? "—" : stats.published}</dd>
+              </div>
+              <div>
+                <dt className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                  <CircleDot className="size-3.5 text-amber-600" aria-hidden="true" /> Draft schedules
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">{loading ? "—" : stats.drafts}</dd>
+              </div>
+              <div>
+                <dt className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                  <AlertTriangle className="size-3.5 text-red-600" aria-hidden="true" /> Open conflicts
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">{loading ? "—" : stats.conflicts}</dd>
+              </div>
+            </dl>
+
+            <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
+              <Link to="/scheduling" className="text-sm font-medium text-maroon-700 hover:text-maroon-800">
+                Go to Intelligent Scheduling <ArrowRight className="inline size-3.5" aria-hidden="true" />
+              </Link>
+              <span className="text-ink-muted">·</span>
+              <Link to="/student-schedule-conflicts" className="text-sm font-medium text-maroon-700 hover:text-maroon-800">
+                Review conflicts
+              </Link>
+            </div>
           </div>
-        </div>
 
-        <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-          {/* Enrollment Overview */}
-          <section className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-ink">
-                  Enrollment Overview
-                </h2>
-                <p className="text-sm text-ink-muted">
-                  Student distribution across academic programs and year levels.
-                </p>
-              </div>
-              <select
-                defaultValue="current"
-                className="h-10 rounded-lg border border-line bg-white px-3 text-sm focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20"
-              >
-                <option>Current term</option>
-              </select>
-            </div>
-            <Card className="p-6">
-              <CardHeader className="pb-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-maroon-600">
-                  Enrollment by category
-                </p>
-                <h3 className="mt-1 font-bold text-lg text-ink">
-                  Student enrollment distribution
-                </h3>
-              </CardHeader>
-              <div className="mt-6">
-                {loading ? (
-                  <div className="h-32 flex items-center justify-center text-sm text-ink-muted">
-                    Loading enrollment data…
-                  </div>
-                ) : (
-                  <EnrollmentBarChart bars={enrollmentBars} />
-                )}
-              </div>
-            </Card>
-          </section>
-
-          {/* Today's Activities */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-ink">
-                  Today's Activities
-                </h2>
-                <p className="text-sm text-ink-muted">
-                  Recent academic operations and schedule updates.
-                </p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              {todayActivities.map((activity) => (
-                <div key={activity.time} className="flex gap-4">
-                  <div className="shrink-0">
-                    <div className="size-8 flex items-center justify-center rounded-full bg-maroon-50 text-maroon-700">
-                      <Clock className="size-4" aria-hidden="true" />
-                    </div>
-                    <span className="block mt-1 w-px bg-line mx-auto" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-ink">
-                      {activity.label}
-                    </p>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {activity.detail}
-                    </p>
-                    <time className="text-xs font-medium text-maroon-600">
-                      {activity.time}
-                    </time>
-                  </div>
-                </div>
-              ))}
-              <div className="flex items-center justify-center py-8">
-                <span className="px-3 py-1 rounded-full border border-line bg-white text-[10px] font-medium text-ink-muted">
-                  No more activities today
+          <div className="rounded-xl border border-line bg-white p-5">
+            <h2 className="text-sm font-semibold text-ink">Directory snapshot</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">Current counts for people records in CCSync.</p>
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="flex items-center gap-3">
+                <span className="flex size-9 items-center justify-center rounded-lg border border-line bg-stone-50 text-maroon-700">
+                  <Users className="size-4" aria-hidden="true" />
                 </span>
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">Students</dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">{loading ? "—" : stats.students}</dd>
+                </div>
               </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Academic Term */}
-        <section className="mt-8 border border-line rounded-xl bg-white p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-ink">Academic Term</h2>
-              <p className="text-sm text-ink-muted">
-                Current semester progress and key dates.
-              </p>
-            </div>
-          </div>
-          <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-line p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
-                Current semester
-              </p>
-              <p className="mt-1 text-xl font-bold text-ink">
-                {currentTerm
-                  ? `${currentTerm.academic_year} · ${currentTerm.name}`
-                  : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-line p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
-                Term status
-              </p>
-              <p className="mt-1 text-xl font-bold text-ink">
-                {currentTerm
-                  ? currentTerm.status.charAt(0).toUpperCase() +
-                    currentTerm.status.slice(1)
-                  : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-line p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
-                Progress
-              </p>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-line">
-                <div
-                  className="h-full bg-gold-500 rounded-full"
-                  style={{ width: "45%" }}
-                />
+              <div className="flex items-center gap-3">
+                <span className="flex size-9 items-center justify-center rounded-lg border border-line bg-stone-50 text-maroon-700">
+                  <GraduationCap className="size-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <dt className="text-xs font-medium text-ink-muted">Faculty</dt>
+                  <dd className="text-lg font-semibold tabular-nums text-ink">{loading ? "—" : stats.faculty}</dd>
+                </div>
               </div>
-              <p className="mt-2 text-sm font-medium text-ink">
-                45% of term complete
-              </p>
-            </div>
-            <div className="rounded-xl border border-line p-5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
-                Academic year
-              </p>
-              <p className="mt-1 text-xl font-bold text-ink">
-                {currentTerm ? currentTerm.academic_year : "—"}
-              </p>
-            </div>
+            </dl>
           </div>
         </section>
 
-        {error && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <p>{error}</p>
+        <section className="space-y-6">
+          <div className="rounded-xl border border-line bg-white p-5">
+            <h2 className="text-sm font-semibold text-ink">Requires attention</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">Items that may affect scheduling or term readiness.</p>
+            <div className="mt-4 space-y-3">
+              {loading ? (
+                <p className="text-sm text-ink-muted">Checking…</p>
+              ) : attention.length ? (
+                attention.map((item) => (
+                  <div key={item.label} className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2 text-sm text-ink">
+                      <Badge tone={item.tone}>{item.tone === "warning" ? "Attention" : "Review"}</Badge>
+                      <span>{item.label}</span>
+                    </div>
+                    <Link to={item.to} className="text-xs font-semibold text-maroon-700 hover:text-maroon-800">View</Link>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-ink-muted">No scheduling issues detected for the current term.</p>
+              )}
+            </div>
           </div>
-        )}
+
+          <div className="rounded-xl border border-line bg-white p-5">
+            <h2 className="text-sm font-semibold text-ink">Quick links</h2>
+            <ul className="mt-3 divide-y divide-line text-sm">
+              {[
+                { to: "/academic/subject-offerings", label: "Subject offerings" },
+                { to: "/faculty", label: "Faculty availability & workload" },
+                { to: "/rooms", label: "Room inventory" },
+                { to: "/announcements", label: "Announcements" },
+              ].map((link) => (
+                <li key={link.to}>
+                  <Link to={link.to} className="flex items-center justify-between py-2.5 text-ink hover:text-maroon-700">
+                    {link.label}
+                    <ArrowRight className="size-3.5 text-ink-muted" aria-hidden="true" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       </div>
     </>
   );

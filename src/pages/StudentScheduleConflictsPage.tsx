@@ -123,10 +123,10 @@ export function StudentScheduleConflictsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Academic operations"
-        title="Student schedule conflicts"
-        description="Find overlapping classes from students’ active subject enrollments without changing their schedules or registrations."
-        actions={<Badge tone="warning">Read-only report</Badge>}
+        eyebrow="Schedule"
+        title="Conflicts"
+        description="Review overlapping classes from active student enrollments for the selected term."
+        actions={<Badge tone="warning">Read-only</Badge>}
       />
 
       {optionsError ? (

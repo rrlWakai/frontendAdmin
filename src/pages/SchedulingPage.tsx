@@ -124,7 +124,7 @@ function formatDay(day: number): string {
 }
 
 export function SchedulingPage() {
-  const [workspaceMode, setWorkspaceMode] = useState<'manual' | 'ai'>('manual')
+  const [workspaceMode, setWorkspaceMode] = useState<'manual' | 'ai'>('ai')
   const [terms, setTerms] = useState<AcademicTerm[]>([])
   const [termId, setTermId] = useState<number | null>(null)
   const [options, setOptions] = useState<SchedulingOptions | null>(null)
@@ -448,9 +448,9 @@ export function SchedulingPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Academic operations"
-        title="Scheduling"
-        description="Manage the published timetable manually or prepare a complete-semester schedule with AI."
+        eyebrow="Schedule"
+        title="Intelligent Scheduling"
+        description="Prepare, generate, review, and publish class schedules for the selected academic term."
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
             <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
@@ -491,23 +491,8 @@ export function SchedulingPage() {
         )}
       />
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex w-fit rounded-xl border border-line bg-surface-soft p-1" role="tablist" aria-label="Scheduling mode">
-          <button
-            type="button"
-            role="tab"
-            id="manual-scheduling-tab"
-            aria-selected={workspaceMode === 'manual'}
-            aria-controls="manual-scheduling-panel"
-            onClick={() => {
-              setWorkspaceMode('manual')
-              setError(null)
-            }}
-            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'manual' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-          >
-            <CalendarDays className="size-4" aria-hidden="true" />
-            Manual scheduling
-          </button>
+      <div className="mb-5 flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-fit rounded-xl border border-line bg-surface-soft p-1" role="tablist" aria-label="Scheduling workspace">
           <button
             type="button"
             role="tab"
@@ -523,7 +508,22 @@ export function SchedulingPage() {
             className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'ai' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
           >
             <Sparkles className="size-4" aria-hidden="true" />
-            Intelligent AI scheduling
+            Intelligent scheduling
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="manual-scheduling-tab"
+            aria-selected={workspaceMode === 'manual'}
+            aria-controls="manual-scheduling-panel"
+            onClick={() => {
+              setWorkspaceMode('manual')
+              setError(null)
+            }}
+            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'manual' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+          >
+            <CalendarDays className="size-4" aria-hidden="true" />
+            Manual schedules
           </button>
         </div>
         {workspaceMode === 'manual' ? (
@@ -535,7 +535,7 @@ export function SchedulingPage() {
             leftIcon={<Plus className="size-4" aria-hidden="true" />}
             disabled={!termId || !options?.offerings.length}
           >
-            New schedule
+            Create draft
           </Button>
         ) : null}
       </div>

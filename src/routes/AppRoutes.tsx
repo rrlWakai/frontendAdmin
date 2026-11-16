@@ -50,7 +50,7 @@ const routes: RouteObject[] = [
           {
             path: 'users',
             element: <UsersPage />,
-            handle: { title: 'Users & access' } satisfies RouteHandle,
+            handle: { title: 'Users & Access' } satisfies RouteHandle,
           },
           {
             path: 'academic',
@@ -80,12 +80,12 @@ const routes: RouteObject[] = [
           {
             path: 'scheduling',
             element: <SchedulingPage />,
-            handle: { title: 'Scheduling' } satisfies RouteHandle,
+            handle: { title: 'Intelligent Scheduling' } satisfies RouteHandle,
           },
           {
             path: 'student-schedule-conflicts',
             element: <StudentScheduleConflictsPage />,
-            handle: { title: 'Student schedule conflicts' } satisfies RouteHandle,
+            handle: { title: 'Schedule conflicts' } satisfies RouteHandle,
           },
           {
             path: 'faculty',

@@ -11,6 +11,7 @@ import {
   Layers,
   Library,
   Megaphone,
+  Settings,
   Sparkles,
   TriangleAlert,
   Users,
@@ -40,33 +41,38 @@ const navigation: NavigationGroup[] = [
     items: [{ label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard }],
   },
   {
-    label: 'People',
+    label: 'Schedule',
     items: [
-      { label: 'Users', to: '/users', icon: Users },
-      { label: 'Faculty', to: '/faculty', icon: GraduationCap },
-      { label: 'Students', to: '/students', icon: UserRound },
+      { label: 'Schedule', to: '/scheduling', icon: CalendarDays },
+      { label: 'Conflicts', to: '/student-schedule-conflicts', icon: TriangleAlert },
     ],
   },
   {
-    label: 'Academics',
+    label: 'Academic',
     items: [
       { label: 'Programs', to: '/academic', icon: BookOpen, end: true },
       { label: 'Terms', to: '/academic/terms', icon: CalendarRange },
       { label: 'Year levels', to: '/academic/year-levels', icon: Layers },
-      { label: 'Subjects', to: '/subjects', icon: Library },
       { label: 'Sections', to: '/academic/sections', icon: UsersRound },
-      { label: 'Subject offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
+      { label: 'Subjects', to: '/subjects', icon: Library },
+      { label: 'Offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
+      { label: 'Faculty', to: '/faculty', icon: GraduationCap },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],
   },
   {
-    label: 'Operations',
+    label: 'Campus',
     items: [
-      { label: 'Scheduling', to: '/scheduling', icon: CalendarDays },
-      { label: 'Student conflicts', to: '/student-schedule-conflicts', icon: TriangleAlert },
-      { label: 'Attendance', to: '/attendance', icon: ClipboardCheck },
       { label: 'Announcements', to: '/announcements', icon: Megaphone },
       { label: 'Activities', to: '/activities', icon: Sparkles },
+      { label: 'Attendance', to: '/attendance', icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: 'Administration',
+    items: [
+      { label: 'Users & access', to: '/users', icon: Users },
+      { label: 'Students', to: '/students', icon: UserRound },
     ],
   },
 ]
@@ -149,13 +155,13 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
       <div className="border-t border-white/10 p-3">
         <div className="rounded-xl bg-white/5 p-3.5 ring-1 ring-white/10">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-200/40">
-            CCSync Phase 3
+            CCSync
           </p>
           <p className="mt-1.5 text-sm font-medium leading-5 text-white/85">
-            Core Academic Management
+            Intelligent Scheduling
           </p>
           <p className="mt-1 text-xs leading-5 text-white/45">
-            Stage 2: Academic Structure Management
+            College academic management
           </p>
         </div>
       </div>

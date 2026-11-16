@@ -277,12 +277,12 @@ export function AnnouncementsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Campus"
         title="Announcements"
-        description="Draft and publish official notices, target the right college community, and review each announcement’s audit history."
+        description="Create, publish, and review official announcements for the college community."
         actions={canManage ? (
           <Button leftIcon={<Plus className="size-4" aria-hidden="true" />} onClick={() => setDialogAnnouncement(null)}>
-            New announcement
+            Create
           </Button>
         ) : null}
       />

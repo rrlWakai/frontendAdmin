@@ -312,12 +312,12 @@ export function ActivitiesPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="Campus"
         title="Activities"
-        description="Plan CCS events, manage their audiences and venues, and keep a clear record of every lifecycle change."
+        description="Plan, publish, and manage campus activities and events."
         actions={canManage ? (
           <Button leftIcon={<Plus className="size-4" aria-hidden="true" />} onClick={() => setDialogActivity(null)}>
-            New activity
+            Create
           </Button>
         ) : null}
       />
