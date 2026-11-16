@@ -11,7 +11,6 @@ import {
   Layers,
   Library,
   Megaphone,
-  Settings,
   Sparkles,
   TriangleAlert,
   Users,
