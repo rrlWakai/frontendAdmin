@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import { SelectField } from '@/components/common/SelectField'
 import { TextField } from '@/components/common/TextField'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 import type {
@@ -149,13 +150,13 @@ export function UserFormDialog({
         event.preventDefault()
         onCancel()
       }}
-      className="fixed inset-0 m-auto max-h-[92vh] w-[min(42rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-night-950/45"
+      className="fixed inset-0 m-auto max-h-[92dvh] w-[min(42rem,calc(100%-2rem))] overflow-y-auto rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40"
       aria-labelledby="account-dialog-title"
     >
       <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
               User and access
             </p>
             <h2 id="account-dialog-title" className="mt-1 text-xl font-semibold">
@@ -165,7 +166,7 @@ export function UserFormDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-lg p-2 text-ink-muted hover:bg-brand-50 hover:text-ink"
+            className="rounded-lg p-2 text-ink-muted hover:bg-maroon-50 hover:text-ink"
             aria-label="Close dialog"
           >
             <X className="size-5" aria-hidden="true" />
@@ -207,43 +208,29 @@ export function UserFormDialog({
               </p>
             </div>
           ) : !isEditing ? (
-            <div className="space-y-1.5 sm:col-span-2">
-              <label htmlFor="account-role" className="block text-sm font-medium text-ink">
-                Account role
-              </label>
-              <select
-                id="account-role"
-                required
-                value={values.role}
-                onChange={(event) => {
-                  setValues((current) => ({
-                    ...current,
-                    role: event.target.value as ManagedRole,
-                    student_number: '',
-                    employee_number: '',
-                    program_id: '',
-                    admitted_on: '',
-                    employment_type: 'full_time',
-                    specialization: '',
-                  }))
-                  setFieldErrors({})
-                  setError(null)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="" disabled>
-                  Select a role
-                </option>
-                {roles.map((role) => (
-                  <option key={role.code} value={role.code}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-              {firstError(fieldErrors, 'role') ? (
-                <p className="text-xs font-medium text-red-600">{firstError(fieldErrors, 'role')}</p>
-              ) : null}
-            </div>
+            <SelectField
+              className="sm:col-span-2"
+              label="Account role"
+              required
+              value={values.role}
+              placeholder="Select a role"
+              options={roles.map((role) => ({ value: role.code, label: role.name }))}
+              error={firstError(fieldErrors, 'role')}
+              onChange={(value) => {
+                setValues((current) => ({
+                  ...current,
+                  role: value as ManagedRole,
+                  student_number: '',
+                  employee_number: '',
+                  program_id: '',
+                  admitted_on: '',
+                  employment_type: 'full_time',
+                  specialization: '',
+                }))
+                setFieldErrors({})
+                setError(null)
+              }}
+            />
           ) : (
             <div className="sm:col-span-2">
               <span className="block text-sm font-medium text-ink">Account role</span>
@@ -329,39 +316,19 @@ export function UserFormDialog({
                 error={firstError(fieldErrors, 'profile.student_number')}
                 onChange={(event) => updateField('student_number', event.target.value)}
               />
-              <div className="space-y-1.5">
-                <label htmlFor="account-program" className="block text-sm font-medium text-ink">
-                  Academic program
-                </label>
-                <select
-                  id="account-program"
-                  required
-                  value={values.program_id}
-                  onChange={(event) => updateField('program_id', event.target.value)}
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="" disabled>
-                    Select a program
-                  </option>
-                  {availablePrograms.map((program) => (
-                    <option
-                      key={program.id}
-                      value={program.id}
-                      disabled={
-                        program.status !== 'active' &&
-                        program.id !== user?.profile?.program?.id
-                      }
-                    >
-                      {program.code} · {program.name}
-                    </option>
-                  ))}
-                </select>
-                {firstError(fieldErrors, 'profile.program_id') ? (
-                  <p className="text-xs font-medium text-red-600">
-                    {firstError(fieldErrors, 'profile.program_id')}
-                  </p>
-                ) : null}
-              </div>
+              <SelectField
+                label="Academic program"
+                required
+                value={values.program_id}
+                placeholder="Select a program"
+                options={availablePrograms.map((program) => ({
+                  value: String(program.id),
+                  label: `${program.code} · ${program.name}`,
+                  disabled: program.status !== 'active' && program.id !== user?.profile?.program?.id,
+                }))}
+                error={firstError(fieldErrors, 'profile.program_id')}
+                onChange={(value) => updateField('program_id', value)}
+              />
               <TextField
                 label="Admission date"
                 name="admitted_on"
@@ -384,60 +351,35 @@ export function UserFormDialog({
                 hint="Required before a pending professor registration can be approved."
                 onChange={(event) => updateField('employee_number', event.target.value)}
               />
-              <div className="space-y-1.5">
-                <label htmlFor="employment-type" className="block text-sm font-medium text-ink">
-                  Employment type
-                </label>
-                <select
-                  id="employment-type"
-                  required
-                  value={values.employment_type}
-                  onChange={(event) =>
-                    updateField(
-                      'employment_type',
-                      event.target.value as FormValues['employment_type'],
-                    )
-                  }
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="" disabled>
-                    Select employment type
-                  </option>
-                  <option value="full_time">Full-time</option>
-                  <option value="part_time">Part-time</option>
-                  <option value="visiting">Visiting</option>
-                </select>
-                {firstError(fieldErrors, 'profile.employment_type') ? (
-                  <p className="text-xs font-medium text-red-600">
-                    {firstError(fieldErrors, 'profile.employment_type')}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="professor-program" className="block text-sm font-medium text-ink">
-                  Academic program
-                </label>
-                <select
-                  id="professor-program"
-                  value={values.program_id}
-                  onChange={(event) => updateField('program_id', event.target.value)}
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="">No primary program</option>
-                  {availablePrograms.map((program) => (
-                    <option
-                      key={program.id}
-                      value={program.id}
-                      disabled={
-                        program.status !== 'active' &&
-                        program.id !== user?.profile?.program?.id
-                      }
-                    >
-                      {program.code} · {program.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectField
+                label="Employment type"
+                required
+                value={values.employment_type}
+                options={[
+                  { value: 'full_time', label: 'Full-time' },
+                  { value: 'part_time', label: 'Part-time' },
+                  { value: 'visiting', label: 'Visiting' },
+                ]}
+                error={firstError(fieldErrors, 'profile.employment_type')}
+                onChange={(value) => updateField(
+                  'employment_type',
+                  value as FormValues['employment_type'],
+                )}
+              />
+              <SelectField
+                label="Academic program"
+                value={values.program_id}
+                options={[
+                  { value: '', label: 'No primary program' },
+                  ...availablePrograms.map((program) => ({
+                    value: String(program.id),
+                    label: `${program.code} · ${program.name}`,
+                    disabled: program.status !== 'active' && program.id !== user?.profile?.program?.id,
+                  })),
+                ]}
+                error={firstError(fieldErrors, 'profile.program_id')}
+                onChange={(value) => updateField('program_id', value)}
+              />
               <TextField
                 label="Specialization"
                 name="specialization"
@@ -457,7 +399,10 @@ export function UserFormDialog({
           <Button
             type="submit"
             isLoading={isSaving}
-            disabled={selectedRole === 'student' && activeProgramCount === 0}
+            disabled={
+              (!isEditing && !values.role)
+              || (selectedRole === 'student' && (activeProgramCount === 0 || !values.program_id))
+            }
           >
             {isEditing ? 'Save changes' : 'Create account'}
           </Button>

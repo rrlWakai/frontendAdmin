@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/common/Button'
+import { SelectField } from '@/components/common/SelectField'
 import { TextField } from '@/components/common/TextField'
 import type {
   FacultyAvailabilityBatchInput,
@@ -294,12 +295,12 @@ export function FacultyAvailabilityDialog({
         event.preventDefault()
         if (!isSaving) onCancel()
       }}
-      className="fixed inset-0 m-auto max-h-[92vh] w-[min(54rem,calc(100%-1rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-brand-950/45 sm:w-[min(54rem,calc(100%-2rem))]"
+      className="fixed inset-0 m-auto max-h-[92dvh] w-[min(54rem,calc(100%-1rem))] overflow-y-auto rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40 sm:w-[min(54rem,calc(100%-2rem))]"
       aria-labelledby="faculty-availability-title"
     >
       <form onSubmit={handleSubmit} className="space-y-5 p-4 sm:p-7">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+        <div className="border-b border-line pb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
             Faculty availability
           </p>
           <h2 id="faculty-availability-title" className="mt-1 text-xl font-semibold">
@@ -319,32 +320,25 @@ export function FacultyAvailabilityDialog({
           </div>
         ) : null}
 
-        <div className="space-y-1.5">
-          <label htmlFor="faculty-availability-term" className="block text-sm font-medium text-ink">
-            Academic term
-          </label>
-          <select
-            id="faculty-availability-term"
-            required
-            disabled={isSaving}
-            value={academicTermId}
-            onChange={(event) => {
-              setAcademicTermId(event.target.value)
-              clearErrors()
-            }}
-            className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-          >
-            <option value="">Choose a term</option>
-            {selectableTerms.map((term) => (
-              <option key={term.id} value={term.id}>
-                {term.academic_year} · {term.name}
-              </option>
-            ))}
-          </select>
-          {selectableTerms.length === 0 ? (
-            <p className="text-xs text-ink-muted">There are no active or planned academic terms.</p>
-          ) : null}
-        </div>
+        <SelectField
+          label="Academic term"
+          required
+          disabled={isSaving}
+          value={academicTermId}
+          placeholder="Choose a term"
+          options={selectableTerms.map((term) => ({
+            value: String(term.id),
+            label: `${term.academic_year} · ${term.name}`,
+          }))}
+          error={fieldErrors.academic_term_id?.[0]}
+          hint={selectableTerms.length === 0
+            ? 'There are no active or planned academic terms.'
+            : 'Availability applies only to the selected term.'}
+          onChange={(value) => {
+            setAcademicTermId(value)
+            clearErrors()
+          }}
+        />
 
         {availability ? (
           <section className="space-y-3 rounded-xl border border-line p-4">
@@ -379,9 +373,9 @@ export function FacultyAvailabilityDialog({
                       disabled={isSaving}
                       aria-pressed={isSelected}
                       onClick={() => toggleDay(dayNumber)}
-                      className={`min-h-10 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                      className={`min-h-10 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${
                         isSelected
-                          ? 'border-brand-600 bg-brand-50 text-brand-800'
+                          ? 'border-maroon-600 bg-maroon-50 text-maroon-800'
                           : 'border-line bg-white text-ink-muted hover:bg-stone-50'
                       }`}
                     >
@@ -400,7 +394,7 @@ export function FacultyAvailabilityDialog({
                     Choose shared windows or customize each selected day.
                   </p>
                 </div>
-                <div className="flex gap-2" role="group" aria-label="Availability configuration mode">
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Availability configuration mode">
                   <Button
                     type="button"
                     size="sm"
@@ -418,7 +412,7 @@ export function FacultyAvailabilityDialog({
                     type="button"
                     size="sm"
                     variant={mode === 'individual' ? 'secondary' : 'outline'}
-                    disabled={isSaving}
+                    disabled={isSaving || selectedDays.length === 0}
                     aria-pressed={mode === 'individual'}
                     onClick={selectIndividualMode}
                   >
@@ -585,22 +579,20 @@ function PeriodFields({
           value={period.end_time}
           onChange={(event) => onChange('end_time', event.target.value)}
         />
-        <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-ink">{label} type</label>
-          <select
-            value={period.availability_type}
-            disabled={disabled}
-            onChange={(event) => onChange(
-              'availability_type',
-              event.target.value as PeriodDraft['availability_type'],
-            )}
-            className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-          >
-            <option value="available">Available</option>
-            <option value="preferred">Preferred</option>
-            <option value="unavailable">Unavailable</option>
-          </select>
-        </div>
+        <SelectField
+          label={`${label} type`}
+          value={period.availability_type}
+          disabled={disabled}
+          options={[
+            { value: 'available', label: 'Available' },
+            { value: 'preferred', label: 'Preferred' },
+            { value: 'unavailable', label: 'Unavailable' },
+          ]}
+          onChange={(value) => onChange(
+            'availability_type',
+            value as PeriodDraft['availability_type'],
+          )}
+        />
         <TextField
           label="Notes"
           maxLength={255}

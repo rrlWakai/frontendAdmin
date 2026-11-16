@@ -5,10 +5,11 @@ import { FacultyProfileDialog } from '@/components/faculty/FacultyProfileDialog'
 import { FacultyQuotaDialog } from '@/components/faculty/FacultyQuotaDialog'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
-import { Card, CardBody } from '@/components/common/Card'
+import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
+import { SelectField } from '@/components/common/SelectField'
 import { TextField } from '@/components/common/TextField'
 import { UserFormDialog } from '@/components/users/UserFormDialog'
 import { useAuth } from '@/hooks/useAuth'
@@ -53,6 +54,19 @@ function statusTone(status: string): 'success' | 'danger' | 'neutral' {
   if (status === 'suspended') return 'danger'
   return 'neutral'
 }
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?'
+}
+
+const statusOptions = [
+  { value: '', label: 'All statuses' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'suspended', label: 'Suspended' },
+]
 
 function formatWorkloadHours(value: number | null): string {
   if (value === null) return '—'
@@ -356,19 +370,22 @@ export function FacultyPage() {
   async function handleAvailabilityDelete(availability: FacultyAvailabilityRecord) {
     setConfirmDialog({
       title: 'Remove availability window',
-      description: 'This faculty availability window will be removed.',
+      description: 'This faculty availability window will be removed. This action cannot be undone.',
       confirmLabel: 'Remove',
       cancelLabel: 'Keep',
       destructive: true,
       onConfirm: async () => {
-        setConfirmDialog(null)
+        setBusyProfessorId(selectedProfessor?.id ?? null)
         try {
           await deleteFacultyAvailability(availability.id)
           setSuccess('Faculty availability removed.')
           setDetailError(null)
+          setConfirmDialog(null)
           refreshDetails()
         } catch (failure) {
           setDetailError(getApiErrorMessage(failure, 'Unable to remove faculty availability.'))
+        } finally {
+          setBusyProfessorId(null)
         }
       },
     })
@@ -379,7 +396,7 @@ export function FacultyPage() {
       <PageHeader
         eyebrow="People directory"
         title="Faculty management"
-        description="Review professor profiles, term availability, teaching assignments, and account access."
+        description="Review faculty profiles, availability, teaching assignments, workload, and account access."
       />
 
       {success ? (
@@ -410,11 +427,24 @@ export function FacultyPage() {
       ) : null}
 
       <Card>
-        <CardBody>
+        <CardHeader className="space-y-1 sm:flex sm:items-end sm:justify-between sm:gap-4 sm:space-y-0">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Directory</h3>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Search faculty and review employment, program, workload, and account status.
+            </p>
+          </div>
+          <p className="text-xs font-medium tabular-nums text-ink-muted">
+            {pagination.total} faculty member{pagination.total === 1 ? '' : 's'}
+            {search || statusFilter ? ' · filtered' : ''}
+          </p>
+        </CardHeader>
+        <CardBody className="space-y-5">
           <form
-            className="grid gap-3 md:grid-cols-[minmax(14rem,1fr)_12rem_auto]"
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1fr)_13rem_auto] lg:items-end"
             onSubmit={(event) => {
               event.preventDefault()
+              if (isLoading) return
               setPage(1)
               setSearch(searchInput.trim())
               setSuccess(null)
@@ -425,33 +455,41 @@ export function FacultyPage() {
               name="search"
               type="search"
               value={searchInput}
+              disabled={isLoading}
               placeholder="Name, email, or employee number"
               onChange={(event) => setSearchInput(event.target.value)}
             />
-            <div className="space-y-1.5">
-              <label htmlFor="faculty-status-filter" className="block text-sm font-medium text-ink">
-                Account status
-              </label>
-              <select
-                id="faculty-status-filter"
-                value={statusFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || value === 'active' || value === 'inactive' || value === 'suspended') {
-                    setStatusFilter(value)
-                  }
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All statuses</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button type="submit" variant="outline" className="w-full md:w-auto">
+            <SelectField
+              label="Account status"
+              value={statusFilter}
+              disabled={isLoading}
+              options={statusOptions}
+              hint={statusFilter ? `Showing ${statusFilter} accounts` : undefined}
+              onChange={(value) => {
+                setPage(1)
+                if (value === '' || value === 'active' || value === 'inactive' || value === 'suspended') {
+                  setStatusFilter(value)
+                }
+              }}
+            />
+            <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-1 lg:justify-end">
+              {search || statusFilter || searchInput ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={isLoading}
+                  onClick={() => {
+                    setSearchInput('')
+                    setSearch('')
+                    setStatusFilter('')
+                    setPage(1)
+                    setSuccess(null)
+                  }}
+                >
+                  Reset
+                </Button>
+              ) : null}
+              <Button type="submit" className="min-w-[7rem] flex-1 sm:flex-none" disabled={isLoading}>
                 <Search className="size-4" aria-hidden="true" />
                 Search
               </Button>
@@ -459,7 +497,7 @@ export function FacultyPage() {
           </form>
 
           {error ? (
-            <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               <p>{error}</p>
               <Button className="mt-3" size="sm" variant="outline" onClick={() => setRefreshVersion((version) => version + 1)}>
                 Retry
@@ -470,110 +508,156 @@ export function FacultyPage() {
               Loading faculty…
             </div>
           ) : faculty.length === 0 ? (
-            <div className="mt-5">
-              <EmptyState
-                icon={GraduationCap}
-                title="No faculty found"
-                description={search || statusFilter
-                  ? 'Try adjusting the search or status filter.'
-                  : 'Professor accounts and profiles will appear here.'}
-              />
-            </div>
+            <EmptyState
+              icon={GraduationCap}
+              title="No faculty found"
+              description={search || statusFilter
+                ? 'Try adjusting the search or account status filter.'
+                : 'Professor accounts and profiles will appear here.'}
+              action={search || statusFilter ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchInput('')
+                    setSearch('')
+                    setStatusFilter('')
+                    setPage(1)
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined}
+            />
           ) : (
-            <>
-              <div className="mt-5 overflow-x-auto rounded-lg border border-line">
+            <div className="space-y-4">
+              <div className="overflow-x-auto rounded-lg border border-line">
                 <table className="w-full min-w-[980px] text-left text-sm">
+                  <caption className="sr-only">Faculty directory</caption>
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
-                      <th className="px-4 py-3">Faculty member</th>
-                      <th className="px-4 py-3">Program</th>
-                      <th className="px-4 py-3">Employment</th>
-                      <th className="px-4 py-3">Weekly workload</th>
-                      <th className="px-4 py-3">Account status</th>
-                      <th className="px-4 py-3">Profile status</th>
-                      <th className="px-4 py-3 text-right">Action</th>
+                      <th scope="col" className="w-[30%] px-4 py-3">Faculty member</th>
+                      <th scope="col" className="w-[18%] px-4 py-3">Program / department</th>
+                      <th scope="col" className="w-[12%] px-4 py-3">Employment</th>
+                      <th scope="col" className="w-[22%] px-4 py-3">Weekly workload</th>
+                      <th scope="col" className="w-[12%] px-4 py-3">Status</th>
+                      <th scope="col" className="w-[6%] px-4 py-3 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
-                    {faculty.map((professor) => (
-                      <tr key={professor.id} className="align-top">
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-ink">{professor.name}</p>
-                          <p className="mt-0.5 text-xs text-ink-muted">
-                            {professor.employee_number ?? 'No employee number'} · {professor.email}
-                          </p>
-                          <p className="mt-1 text-xs text-ink-muted">{professor.specialization || 'No specialization listed'}</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {professor.program ? `${professor.program.code} · ${professor.program.name}` : '—'}
-                        </td>
-                        <td className="px-4 py-4 capitalize text-ink-muted">
-                          {professor.employment_type.replace('_', ' ')}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="w-40 space-y-1.5">
-                            <p className="text-sm font-medium text-ink">
-                              {formatWorkloadHours(professor.workload.assigned_hours)}
-                              <span className="font-normal text-ink-muted">
-                                {' / '}
-                                {professor.workload.weekly_quota === null
-                                  ? 'No quota'
-                                  : formatWorkloadHours(professor.workload.weekly_quota)}
+                  <tbody className="divide-y divide-line bg-white">
+                    {faculty.map((professor) => {
+                      const isOpening = selectedProfessor?.id === professor.id && isDetailLoading
+
+                      return (
+                        <tr key={professor.id} className="align-top transition-colors hover:bg-stone-50/60">
+                          <td className="px-4 py-4">
+                            <div className="flex gap-3">
+                              <span
+                                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-maroon-100 bg-maroon-50 text-xs font-semibold text-maroon-700"
+                                aria-hidden="true"
+                              >
+                                {initials(professor.name)}
                               </span>
-                            </p>
-                            {professor.workload.weekly_quota === null ? null : (
-                              <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
-                                <div
-                                  className={`h-full rounded-full ${workloadProgressTone(professor.workload.status)}`}
-                                  style={{ width: `${workloadProgressWidth(professor.workload)}%` }}
-                                />
+                              <div className="min-w-0">
+                                <p className="font-semibold leading-5 text-ink">{professor.name}</p>
+                                <p className="mt-0.5 text-xs text-ink-muted">
+                                  {professor.employee_number ?? 'No employee number'}
+                                </p>
+                                <p className="mt-0.5 max-w-[22rem] break-all text-xs text-ink-muted">
+                                  {professor.email}
+                                </p>
+                                <p className="mt-1 text-xs text-ink-muted">
+                                  {professor.specialization || 'No specialization listed'}
+                                </p>
                               </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-ink-muted">
+                            {professor.program ? (
+                              <div>
+                                <p className="font-medium text-ink">{professor.program.code}</p>
+                                <p className="mt-0.5 text-xs leading-5">{professor.program.name}</p>
+                              </div>
+                            ) : (
+                              <span>—</span>
                             )}
-                            <div className="flex flex-wrap gap-1.5">
-                              <Badge tone={workloadStatusTone(professor.workload.status)}>
-                                {workloadStatusLabel(professor.workload.status)}
-                              </Badge>
-                              {professor.workload.has_discrepancies ? (
-                                <Badge tone="warning">Schedule variance</Badge>
+                          </td>
+                          <td className="px-4 py-4 capitalize text-ink-muted">
+                            {professor.employment_type.replaceAll('_', ' ')}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="max-w-[14rem] space-y-1.5">
+                              <p className="text-sm font-semibold tabular-nums text-ink">
+                                {formatWorkloadHours(professor.workload.assigned_hours)}
+                                <span className="font-normal text-ink-muted">
+                                  {' / '}
+                                  {professor.workload.weekly_quota === null
+                                    ? 'No quota'
+                                    : formatWorkloadHours(professor.workload.weekly_quota)}
+                                </span>
+                              </p>
+                              <p className="text-[11px] text-ink-muted">Assigned / weekly quota</p>
+                              {professor.workload.weekly_quota === null ? null : (
+                                <div
+                                  className="h-1.5 overflow-hidden rounded-full bg-stone-200"
+                                  aria-hidden="true"
+                                >
+                                  <div
+                                    className={`h-full rounded-full ${workloadProgressTone(professor.workload.status)}`}
+                                    style={{ width: `${workloadProgressWidth(professor.workload)}%` }}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex flex-wrap gap-1.5">
+                                <Badge tone={workloadStatusTone(professor.workload.status)}>
+                                  {workloadStatusLabel(professor.workload.status)}
+                                </Badge>
+                                {professor.workload.has_discrepancies ? (
+                                  <Badge tone="warning">Schedule variance</Badge>
+                                ) : null}
+                              </div>
+                              {professor.workload.issues_count > 0 ? (
+                                <p className="text-[11px] font-medium text-amber-700">
+                                  {professor.workload.issues_count} workload issue
+                                  {professor.workload.issues_count === 1 ? '' : 's'} need attention
+                                </p>
                               ) : null}
                             </div>
-                            {professor.workload.issues_count > 0 ? (
-                              <p className="text-[11px] font-medium text-amber-700">
-                                {professor.workload.issues_count} workload issue
-                                {professor.workload.issues_count === 1 ? '' : 's'} need attention
-                              </p>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge tone={statusTone(professor.account_status)}>{professor.account_status}</Badge>
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge tone={statusTone(professor.profile_status)}>{professor.profile_status}</Badge>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setProfessorDetail(null)
-                              setDetailError(null)
-                              setIsDetailLoading(true)
-                              setSelectedProfessor(professor)
-                            }}
-                          >
-                            View profile
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-wrap gap-1.5">
+                              <Badge tone={statusTone(professor.account_status)}>{professor.account_status}</Badge>
+                              <Badge tone={statusTone(professor.profile_status)}>
+                                {professor.profile_status} profile
+                              </Badge>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isOpening}
+                              aria-label={`View profile for ${professor.name}`}
+                              onClick={() => {
+                                setProfessorDetail(null)
+                                setDetailError(null)
+                                setIsDetailLoading(true)
+                                setSelectedProfessor(professor)
+                              }}
+                            >
+                              {isOpening ? 'Opening…' : 'View profile'}
+                              {!isOpening ? <ChevronRight className="size-4" aria-hidden="true" /> : null}
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-ink-muted">
-                  {pagination.total} faculty member{pagination.total === 1 ? '' : 's'} · Page {page} of {pagination.last_page}
+                  Page {page} of {pagination.last_page} · {pagination.total} faculty member{pagination.total === 1 ? '' : 's'}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -598,7 +682,7 @@ export function FacultyPage() {
                   </Button>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </CardBody>
       </Card>

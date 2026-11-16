@@ -73,12 +73,12 @@ export function FacultyQuotaDialog({
         event.preventDefault()
         if (!isSaving) onCancel()
       }}
-      className="fixed inset-0 m-auto w-[min(30rem,calc(100%-2rem))] rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-brand-950/45"
+      className="fixed inset-0 m-auto w-[min(30rem,calc(100%-2rem))] rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40"
       aria-labelledby="faculty-quota-title"
     >
       <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
             Faculty workload
           </p>
           <h2 id="faculty-quota-title" className="mt-1 text-xl font-semibold">

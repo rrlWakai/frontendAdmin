@@ -38,7 +38,7 @@ export function TextField({
           aria-invalid={Boolean(error)}
           aria-describedby={error || hint ? messageId : undefined}
           className={cn(
-            'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink shadow-sm transition placeholder:text-ink-muted/60 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+            'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink shadow-sm transition placeholder:text-ink-muted/60 focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20',
             leftIcon ? 'pl-10' : undefined,
             error && 'border-red-400 focus:border-red-500 focus:ring-red-500/20',
           )}

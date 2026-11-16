@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/common/Button'
-import { Card, CardHeader } from '@/components/common/Card'
 
 type DialogVariant = 'confirm' | 'prompt'
 
@@ -34,99 +34,125 @@ export function ConfirmationDialog({
   inputValue = '',
   onConfirm,
 }: ConfirmationDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const inputId = useId()
+  const cancelId = useId()
+  const confirmId = useId()
   const [input, setInput] = useState(inputValue ?? '')
-  const inputRef = useRef<HTMLInputElement | null>(null)
 
-  const handleConfirm = () => {
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog?.showModal()
+
+    const frame = window.requestAnimationFrame(() => {
+      if (variant === 'prompt' && inputLabel) inputRef.current?.focus()
+      else if (destructive) document.getElementById(cancelId)?.focus()
+      else document.getElementById(confirmId)?.focus()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      dialog?.close()
+    }
+  }, [cancelId, confirmId, destructive, inputLabel, variant])
+
+  function handleClose() {
+    if (!isLoading) onClose()
+  }
+
+  function handleConfirm() {
+    if (isLoading) return
+    if (variant === 'prompt' && !input.trim()) return
     void onConfirm(input)
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      onClose()
-    }
+  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter' && !isLoading) {
+      event.preventDefault()
       handleConfirm()
     }
   }
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="confirmation-dialog-title"
-        aria-describedby="confirmation-dialog-description"
-        onClick={onClose}
-      />
-      <Card
-        className="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-white shadow-[0_18px_50px_-42px_rgba(23,23,23,0.55)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <CardHeader className="flex items-start justify-between gap-3 pb-4">
-          <div>
-            <h2 id="confirmation-dialog-title" className="text-base font-bold text-ink">
+    <dialog
+      ref={dialogRef}
+      onCancel={(event) => {
+        event.preventDefault()
+        handleClose()
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) handleClose()
+      }}
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40"
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+    >
+      <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-base font-semibold text-ink">
               {title}
             </h2>
             {description ? (
-              <p id="confirmation-dialog-description" className="mt-1 text-sm leading-6 text-ink-muted">
+              <p id={descriptionId} className="mt-1.5 text-sm leading-6 text-ink-muted">
                 {description}
               </p>
             ) : null}
           </div>
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Close dialog"
+            onClick={handleClose}
             disabled={isLoading}
+            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-stone-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Close dialog"
           >
             <X className="size-4" aria-hidden="true" />
-          </Button>
-        </CardHeader>
-
-        <div className="p-5 pb-3">
-          {variant === 'prompt' && inputLabel ? (
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-ink">{inputLabel}</label>
-              <input
-                ref={inputRef}
-                id="confirmation-dialog-input"
-                autoFocus
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={inputPlaceholder}
-                onKeyDown={handleKeyDown}
-                className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20"
-                disabled={isLoading}
-              />
-            </div>
-          ) : null}
+          </button>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4 px-5 pb-5">
+        {variant === 'prompt' && inputLabel ? (
+          <div className="space-y-1.5 px-5 py-4">
+            <label htmlFor={inputId} className="block text-sm font-medium text-ink">
+              {inputLabel}
+            </label>
+            <input
+              ref={inputRef}
+              id={inputId}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder={inputPlaceholder}
+              onKeyDown={handleInputKeyDown}
+              disabled={isLoading}
+              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink shadow-sm transition placeholder:text-ink-muted/60 focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20 disabled:bg-stone-50"
+            />
+          </div>
+        ) : null}
+
+        <div className="flex flex-col-reverse gap-2 border-t border-line bg-stone-50/70 px-5 py-4 sm:flex-row sm:justify-end">
           <Button
+            id={cancelId}
             type="button"
             variant="outline"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={isLoading}
           >
             {cancelLabel}
           </Button>
           <Button
+            id={confirmId}
             type="button"
             variant={destructive ? 'danger' : 'primary'}
             isLoading={isLoading}
             onClick={handleConfirm}
-            onKeyDown={handleKeyDown}
             disabled={isLoading || (variant === 'prompt' && !input.trim())}
           >
             {confirmLabel}
           </Button>
         </div>
-      </Card>
-    </>
+      </div>
+    </dialog>
   )
 }
