@@ -31,6 +31,15 @@ export interface AnnouncementTargetOptions {
   sections: Array<AnnouncementOption & { program_id: number; year_level_id: number }>
 }
 
+export interface AnnouncementActivitySummary {
+  id: number
+  title: string
+  category: string
+  status: string
+  starts_at: string
+  ends_at: string
+}
+
 export interface AnnouncementTargetSummary {
   roles: AnnouncementOption[]
   programs: AnnouncementOption[]
@@ -54,11 +63,14 @@ export interface Announcement {
   archived_at: string | null
   created_at: string
   author: { id: number; name: string }
+  activity_id: number | null
+  activity: AnnouncementActivitySummary | null
   audience_summary: string
   targets: AnnouncementTargetSummary
 }
 
 export interface AnnouncementInput {
+  activity_id?: number | null
   title: string
   summary: string | null
   content: string
@@ -75,6 +87,8 @@ export interface AnnouncementFilters {
   status?: AnnouncementStatus
   category?: AnnouncementCategory
   priority?: AnnouncementPriority
+  activity_id?: number
+  link_type?: 'linked' | 'general'
   page?: number
   per_page?: number
 }

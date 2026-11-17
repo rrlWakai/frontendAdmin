@@ -15,10 +15,15 @@ import type {
   AnnouncementTargetIds,
   AnnouncementTargetOptions,
 } from '@/types/announcement'
+import type { Activity } from '@/types/activity'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
 interface AnnouncementFormDialogProps {
   announcement: Announcement | null
+  activities?: Activity[]
+  initialActivityId?: number | null
+  sourceActivity?: Activity | null
+  submitLabel?: string
   onCancel: () => void
   onSubmit: (payload: AnnouncementInput) => Promise<void>
 }
@@ -129,26 +134,38 @@ function MultiSelect({
 
 export function AnnouncementFormDialog({
   announcement,
+  activities = [],
+  initialActivityId = null,
+  sourceActivity = null,
+  submitLabel = 'Save draft',
   onCancel,
   onSubmit,
 }: AnnouncementFormDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const source = announcement ? null : sourceActivity
+  const sourceTargets = source?.audience_scope === 'custom' ? source.targets : undefined
+  const [selectedActivityId, setSelectedActivityId] = useState<number | null>(
+    () => announcement?.activity_id ?? initialActivityId ?? sourceActivity?.id ?? null,
+  )
   const [values, setValues] = useState<FormValues>(() => ({
-    title: announcement?.title ?? '',
-    summary: announcement?.summary ?? '',
-    content: announcement?.content ?? '',
-    category: announcement?.category ?? 'general',
+    title: announcement?.title ?? source?.title ?? '',
+    summary: announcement?.summary ?? source?.summary ?? '',
+    content: announcement?.content ?? source?.description ?? '',
+    category: announcement?.category ?? (source ? 'event' : 'general'),
     priority: announcement?.priority ?? 'normal',
-    audience_scope: announcement?.audience_scope ?? 'all',
-    published_at: localDateTime(announcement?.published_at),
-    expires_at: localDateTime(announcement?.expires_at),
+    audience_scope: announcement?.audience_scope ?? source?.audience_scope ?? 'all',
+    published_at: localDateTime(announcement?.published_at ?? source?.starts_at),
+    expires_at: localDateTime(
+      announcement?.expires_at
+        ?? (source && source.ends_at > source.starts_at ? source.ends_at : null),
+    ),
   }))
   const [targets, setTargets] = useState<AnnouncementTargetIds>(() => ({
-    role_ids: announcement?.targets.roles.map((item) => item.id) ?? [],
-    program_ids: announcement?.targets.programs.map((item) => item.id) ?? [],
-    year_level_ids: announcement?.targets.year_levels.map((item) => item.id) ?? [],
-    section_ids: announcement?.targets.sections.map((item) => item.id) ?? [],
-    user_ids: announcement?.targets.users.map((item) => item.id) ?? [],
+    role_ids: announcement?.targets.roles.map((item) => item.id) ?? sourceTargets?.role_ids ?? [],
+    program_ids: announcement?.targets.programs.map((item) => item.id) ?? sourceTargets?.program_ids ?? [],
+    year_level_ids: announcement?.targets.year_levels.map((item) => item.id) ?? sourceTargets?.year_level_ids ?? [],
+    section_ids: announcement?.targets.sections.map((item) => item.id) ?? sourceTargets?.section_ids ?? [],
+    user_ids: announcement?.targets.users.map((item) => item.id) ?? sourceTargets?.user_ids ?? [],
   }))
   const [options, setOptions] = useState<AnnouncementTargetOptions | null>(null)
   const [targetUsers, setTargetUsers] = useState<AnnouncementOption[]>(
@@ -242,6 +259,7 @@ export function AnnouncementFormDialog({
     try {
       await onSubmit({
         ...values,
+        activity_id: selectedActivityId,
         title: values.title.trim(),
         summary: values.summary.trim() || null,
         content: values.content.trim(),
@@ -261,6 +279,9 @@ export function AnnouncementFormDialog({
     }
   }
 
+  const activityChoices = sourceActivity
+    ? [sourceActivity, ...activities.filter((activity) => activity.id !== sourceActivity.id)]
+    : activities
   const sections = options?.sections.map((section) => ({
     id: section.id,
     name: `${section.code ?? section.id}${section.name ? ` · ${section.name}` : ''}`,
@@ -287,10 +308,16 @@ export function AnnouncementFormDialog({
               Announcement management
             </p>
             <h2 id="announcement-form-title" className="mt-1 text-xl font-semibold">
-              {announcement ? 'Edit announcement' : 'Create announcement'}
+              {announcement
+                ? 'Edit announcement'
+                : source
+                  ? 'Create activity announcement'
+                  : 'Create announcement'}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
-              Save as a draft, then publish now or schedule it for later. Times use Philippine local time (Asia/Manila, UTC+08:00).
+              {source
+                ? 'This announcement will reference the published activity. Publishing is a separate, intentional action.'
+                : 'Save as a draft, then publish now or schedule it for later. Times use Philippine local time (Asia/Manila, UTC+08:00).'}
             </p>
           </div>
           <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
@@ -392,6 +419,38 @@ export function AnnouncementFormDialog({
               <option value="custom">Custom audience</option>
             </select>
           </div>
+          {activityChoices.length ? (
+            <div className="space-y-1.5 sm:col-span-2">
+              <label htmlFor="announcement-activity" className="block text-sm font-medium text-ink">
+                Associated activity
+              </label>
+              <select
+                id="announcement-activity"
+                value={selectedActivityId ?? ''}
+                disabled={Boolean(sourceActivity)}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setSelectedActivityId(value ? Number(value) : null)
+                }}
+                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
+              >
+                <option value="">No activity (general announcement)</option>
+                {activityChoices.map((activity) => (
+                  <option key={activity.id} value={activity.id}>
+                    {activity.title}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-ink-muted">
+                {sourceActivity
+                  ? 'Linked to the activity being published.'
+                  : 'Optional. Linking an activity does not send a notification by itself.'}
+              </p>
+              {fieldErrors.activity_id?.[0] ? (
+                <p className="text-xs font-medium text-red-600">{fieldErrors.activity_id[0]}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {values.audience_scope === 'custom' ? (
@@ -474,7 +533,7 @@ export function AnnouncementFormDialog({
         <div className="flex justify-end gap-2 border-t border-line pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
           <Button type="submit" isLoading={isSaving || (values.audience_scope === 'custom' && isLoadingOptions)}>
-            Save draft
+            {submitLabel}
           </Button>
         </div>
       </form>

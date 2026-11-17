@@ -238,7 +238,7 @@ export function DashboardPage() {
                 { to: "/academic/subject-offerings", label: "Subject offerings" },
                 { to: "/faculty", label: "Faculty availability & workload" },
                 { to: "/rooms", label: "Room inventory" },
-                { to: "/announcements", label: "Announcements" },
+                { to: "/activities?view=announcements", label: "Campus announcements" },
               ].map((link) => (
                 <li key={link.to}>
                   <Link to={link.to} className="flex items-center justify-between py-2.5 text-ink hover:text-maroon-700">

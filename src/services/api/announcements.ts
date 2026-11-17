@@ -110,6 +110,14 @@ export async function archiveAnnouncement(id: number): Promise<Announcement> {
   return data.data.announcement
 }
 
+export async function fetchAnnouncement(id: number): Promise<Announcement> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ announcement: Announcement }>>(
+    `/announcements/${id}`,
+  )
+
+  return data.data.announcement
+}
+
 export async function fetchAnnouncementHistory(
   id: number,
 ): Promise<AnnouncementHistoryPage> {

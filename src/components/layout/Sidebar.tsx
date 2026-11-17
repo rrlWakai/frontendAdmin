@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Layers,
   Library,
-  Megaphone,
   Sparkles,
   TriangleAlert,
   Users,
@@ -62,7 +61,6 @@ const navigation: NavigationGroup[] = [
   {
     label: 'Campus',
     items: [
-      { label: 'Announcements', to: '/announcements', icon: Megaphone },
       { label: 'Activities', to: '/activities', icon: Sparkles },
       { label: 'Attendance', to: '/attendance', icon: ClipboardCheck },
     ],

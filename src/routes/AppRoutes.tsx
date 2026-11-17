@@ -4,7 +4,6 @@ import { AdminLayout } from '@/layouts/AdminLayout'
 import { AcademicPage } from '@/pages/AcademicPage'
 import { AcademicTermsPage } from '@/pages/AcademicTermsPage'
 import { ActivitiesPage } from '@/pages/ActivitiesPage'
-import { AnnouncementsPage } from '@/pages/AnnouncementsPage'
 import { AttendancePage } from '@/pages/AttendancePage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FacultyPage } from '@/pages/FacultyPage'
@@ -114,8 +113,7 @@ const routes: RouteObject[] = [
           },
           {
             path: 'announcements',
-            element: <AnnouncementsPage />,
-            handle: { title: 'Announcements' } satisfies RouteHandle,
+            element: <Navigate to="/activities?view=announcements" replace />,
           },
           {
             path: 'activities',

@@ -21,6 +21,14 @@ export interface ActivityOption {
   code?: string
 }
 
+export interface ActivityAnnouncementSummary {
+  id: number
+  title: string
+  status: 'draft' | 'published' | 'archived'
+  publication_state: 'draft' | 'scheduled' | 'published' | 'expired' | 'archived'
+  published_at: string | null
+}
+
 export interface ActivityTargetIds {
   role_ids: number[]
   program_ids: number[]
@@ -61,6 +69,7 @@ export interface Activity {
   created_by: { id: number; name: string } | null
   created_at: string
   updated_at: string
+  announcements?: ActivityAnnouncementSummary[]
   targets?: ActivityTargetIds
 }
 

@@ -80,6 +80,14 @@ export async function completeActivity(id: number): Promise<Activity> {
   return data.data.activity
 }
 
+export async function fetchActivity(id: number): Promise<Activity> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ activity: Activity }>>(
+    `/activities/${id}`,
+  )
+
+  return data.data.activity
+}
+
 export async function fetchActivityHistory(id: number): Promise<ActivityHistoryPage> {
   const { data } = await apiClient.get<ApiSuccessResponse<ActivityHistoryPage>>(
     `/activities/${id}/history`,

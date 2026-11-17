@@ -38,9 +38,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         </span>
 
         <Link
-          to="/announcements"
+          to="/activities?view=announcements"
           className="rounded-lg p-2 text-ink-muted transition hover:bg-surface-soft hover:text-ink"
-          aria-label="Open announcements"
+          aria-label="Open campus announcements"
         >
           <Megaphone className="size-[18px]" aria-hidden="true" />
         </Link>
