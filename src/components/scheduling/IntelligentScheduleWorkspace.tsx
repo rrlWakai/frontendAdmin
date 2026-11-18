@@ -375,11 +375,11 @@ export function IntelligentScheduleWorkspace({
         : 'ready'
   const assignmentDetail = assignmentLoading
     ? `Checking active assignment records: ${checkedOfferingCount} of ${configuredOfferings.length} open class assignments.`
-    : assignmentReadiness
+    : assignmentReadiness === null
       ? 'Professor assignments have not been checked for the configured class assignments. The AI never selects or redistributes professors.'
-      : hasCurrentAssignmentCheck
-        ? `${assignmentReadiness?.missing} unassigned · ${assignmentReadiness?.multiple} with multiple distinct professors · ${assignmentReadiness?.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary class assignment.`
-        : `${assignmentReadiness?.checkedOfferings ?? 0} class assignments each have exactly one distinct assigned professor.`
+      : !hasCurrentAssignmentCheck
+        ? `Assignment results for ${assignmentReadiness.checkedOfferings} class assignments are outdated. Recheck assignments for the current term.`
+        : `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary class assignment.`
 
   const curriculumIssues = readiness?.issues.filter((issue) => (
     issue.code === 'offering_subject_not_in_curriculum' || issue.code.startsWith('curriculum_')
