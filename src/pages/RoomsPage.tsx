@@ -8,7 +8,6 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { TextField } from '@/components/common/TextField'
 import { RoomDetailsDialog } from '@/components/rooms/RoomDetailsDialog'
 import { RoomFormDialog } from '@/components/rooms/RoomFormDialog'
-import { RoomStatusBadge } from '@/components/rooms/RoomStatusBadge'
 import { useAuth } from '@/hooks/useAuth'
 import {
   createRoom,
@@ -55,23 +54,41 @@ function formatRoomType(value: string): string {
 }
 
 function roomLocation(room: Room): string {
-  return [room.building, room.floor ? `Floor ${room.floor}` : null]
+  const floor = room.floor
+    ? `${room.floor}${/^\d+$/.test(room.floor) ? ordinalSuffix(Number(room.floor)) : ''} Floor`
+    : null
+
+  return [room.code, floor, room.building]
     .filter(Boolean)
-    .join(' · ') || '—'
+    .join(', ') || 'Location not specified'
+}
+
+function ordinalSuffix(value: number): string {
+  const remainder = value % 100
+  if (remainder >= 11 && remainder <= 13) return 'th'
+
+  switch (value % 10) {
+    case 1: return 'st'
+    case 2: return 'nd'
+    case 3: return 'rd'
+    default: return 'th'
+  }
+}
+
+function isCurrentOccupancy(room: Room): boolean {
+  const occupancy = room.occupancy
+  if (!occupancy || occupancy.checked_out_at || occupancy.class_date !== localDate()) return false
+
+  const now = new Date()
+  const start = occupancy.scheduled_start_at ? new Date(occupancy.scheduled_start_at) : null
+  const end = occupancy.scheduled_end_at ? new Date(occupancy.scheduled_end_at) : null
+
+  return start !== null && end !== null && now >= start && now < end
 }
 
 function localDate(): string {
   const date = new Date()
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function availabilityTone(status: RoomAvailabilityStatus | undefined): string {
-  switch (status) {
-    case 'occupied': return 'bg-blue-100 text-blue-900'
-    case 'reserved': return 'bg-amber-100 text-amber-900'
-    case 'discrepancy': return 'bg-red-100 text-red-900'
-    default: return 'bg-emerald-100 text-emerald-900'
-  }
 }
 
 export function RoomsPage() {
@@ -404,58 +421,43 @@ export function RoomsPage() {
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[1280px] text-left text-sm">
+                <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
-                      <th className="px-4 py-3">Room</th>
-                      <th className="px-4 py-3">Location</th>
-                      <th className="px-4 py-3">Capacity</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Availability</th>
-                      <th className="px-4 py-3">Current schedule / occupancy</th>
-                      <th className="px-4 py-3">Room condition</th>
-                      <th className="px-4 py-3">Active allocations</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-3 py-3 sm:px-4">Room</th>
+                      <th className="px-3 py-3 sm:px-4">Location</th>
+                      <th className="px-3 py-3 sm:px-4">Capacity</th>
+                      <th className="px-3 py-3 sm:px-4">Type</th>
+                      <th className="px-3 py-3 sm:px-4">Current Schedule</th>
+                      <th className="px-3 py-3 text-right sm:px-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
                     {rooms.map((room) => (
                       <tr key={room.id} className="align-top">
-                        <td className="px-4 py-4">
+                        <td className="px-3 py-3 sm:px-4 sm:py-4">
                           <p className="font-semibold text-ink">{room.name}</p>
                           <p className="mt-0.5 text-xs text-ink-muted">{room.code}</p>
                         </td>
-                        <td className="px-4 py-4 text-ink-muted">{roomLocation(room)}</td>
-                        <td className="px-4 py-4 text-ink-muted">{room.capacity} seats</td>
-                        <td className="px-4 py-4 text-ink-muted">{formatRoomType(room.room_type)}</td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${availabilityTone(room.availability_status)}`}>
-                            {availabilityOptions.find((option) => option.value === room.availability_status)?.label ?? 'Available'}
-                          </span>
-                          {room.availability_status === 'discrepancy' ? (
-                            <p className="mt-1 text-xs font-medium text-red-700">Room mismatch requires review</p>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-4 text-xs text-ink-muted">
-                          {room.occupancy ? (
+                        <td className="px-3 py-3 text-ink-muted sm:px-4 sm:py-4">{roomLocation(room)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-ink-muted sm:px-4 sm:py-4">{room.capacity} seats</td>
+                        <td className="px-3 py-3 text-ink-muted sm:px-4 sm:py-4">{formatRoomType(room.room_type)}</td>
+                        <td className="px-3 py-3 text-xs text-ink-muted sm:px-4 sm:py-4">
+                          {isCurrentOccupancy(room) && room.occupancy ? (
                             <>
                               <p className="font-semibold text-ink">{room.occupancy.subject?.code ?? 'Class'} · {room.occupancy.section?.code ?? 'Section'}</p>
                               <p>{room.occupancy.professor.name ?? 'Professor'} · checked in {room.occupancy.checked_in_at ? new Date(room.occupancy.checked_in_at).toLocaleTimeString() : '—'}</p>
                               <p>Scheduled until {room.occupancy.scheduled_end_at ? new Date(room.occupancy.scheduled_end_at).toLocaleTimeString() : '—'}</p>
                             </>
-                          ) : room.scheduled ? (
+                          ) : room.availability_status === 'reserved' && room.scheduled ? (
                             <>
                               <p className="font-semibold text-ink">{room.scheduled.subject?.code ?? 'Class'} · {room.scheduled.section?.code ?? 'Section'}</p>
                               <p>{room.scheduled.professor ?? 'Professor'} · {room.scheduled.starts_at?.slice(0, 5) ?? '—'}–{room.scheduled.ends_at?.slice(0, 5) ?? '—'}</p>
                             </>
                           ) : <p>No current class</p>}
                         </td>
-                        <td className="px-4 py-4">
-                          <RoomStatusBadge status={room.status} />
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">{room.active_allocations_count ?? 0}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
+                        <td className="px-3 py-3 sm:px-4 sm:py-4">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <Button size="sm" variant="outline" onClick={() => openDetails(room)}>
                               View
                             </Button>
