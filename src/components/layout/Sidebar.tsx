@@ -4,7 +4,6 @@ import {
   BookOpenCheck,
   CalendarDays,
   ChevronDown,
-  ClipboardCheck,
   DoorOpen,
   GraduationCap,
   LayoutDashboard,
@@ -92,10 +91,7 @@ const navigation: NavigationGroup[] = [
   },
   {
     label: 'Campus',
-    items: [
-      { label: 'Activities', to: '/activities', icon: Sparkles },
-      { label: 'Attendance Policy', to: '/attendance', icon: ClipboardCheck },
-    ],
+    items: [{ label: 'Activities', to: '/activities', icon: Sparkles }],
   },
   {
     label: 'Administration',

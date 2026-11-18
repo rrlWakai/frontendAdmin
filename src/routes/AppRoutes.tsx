@@ -7,7 +7,6 @@ import { AcademicYearsPage } from '@/pages/AcademicYearsPage'
 import { CurriculumRequirementsPage } from '@/pages/CurriculumRequirementsPage'
 import { MajorsPage } from '@/pages/MajorsPage'
 import { ActivitiesPage } from '@/pages/ActivitiesPage'
-import { AttendancePage } from '@/pages/AttendancePage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FacultyPage } from '@/pages/FacultyPage'
 import { LoginPage } from '@/pages/LoginPage'
@@ -117,11 +116,6 @@ const routes: RouteObject[] = [
             path: 'rooms',
             element: <RoomsPage />,
             handle: { title: 'Room inventory' } satisfies RouteHandle,
-          },
-          {
-            path: 'attendance',
-            element: <AttendancePage />,
-            handle: { title: 'Attendance Policy' } satisfies RouteHandle,
           },
           {
             path: 'announcements',

@@ -75,14 +75,14 @@ export function DepartmentPersonnelProgramAccessDialog({
       <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-7">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
-            Attendance access
+            Program access
           </p>
           <h2 id="program-access-title" className="mt-1 text-xl font-semibold">
             Programs for {user.name}
           </h2>
           <p className="mt-2 text-sm leading-6 text-ink-muted">
-            This account can monitor attendance only for assigned programs. No selected
-            programs means no Attendance monitoring access.
+            This account can manage activities and announcements only for assigned
+            programs. No selected programs means no program-scoped access.
           </p>
         </div>
 

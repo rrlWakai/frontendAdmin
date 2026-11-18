@@ -186,7 +186,7 @@ export function UsersPage() {
     if (!programAccessUser) return
 
     await updateDepartmentPersonnelProgramAccess(programAccessUser.id, programIds)
-    setSuccess(`Attendance program access updated for ${programAccessUser.name}.`)
+    setSuccess(`Program access updated for ${programAccessUser.name}.`)
     setProgramAccessUser(null)
     refreshAccounts()
   }
@@ -477,7 +477,7 @@ export function UsersPage() {
                               </>
                             ) : account.role.code === 'department_personnel' ? (
                               <>
-                                <p>Attendance programs</p>
+                                <p>Program access</p>
                                 <p className="mt-1">
                                   {account.program_access.length
                                     ? account.program_access.map((program) => program.code).join(', ')
