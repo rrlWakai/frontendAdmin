@@ -11,6 +11,34 @@ import type {
 } from '@/types/attendance'
 import { apiClient } from '@/services/api/client'
 
+export interface AttendancePolicy {
+  id: number
+  academic_term_id: number
+  subject_offering_id: number | null
+  allowed_absences: number
+  effective_at: string
+}
+
+export async function fetchAttendancePolicies(academicTermId?: number): Promise<AttendancePolicy[]> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ policies: AttendancePolicy[] }>>(
+    '/attendance/policies',
+    { params: academicTermId ? { academic_term_id: academicTermId } : undefined },
+  )
+  return data.data.policies
+}
+
+export async function createAttendancePolicy(input: {
+  academic_term_id: number
+  subject_offering_id: number | null
+  allowed_absences: number
+}): Promise<AttendancePolicy> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ policy: AttendancePolicy }>>(
+    '/attendance/policies',
+    input,
+  )
+  return data.data.policy
+}
+
 export async function fetchAttendanceOptions(): Promise<AttendanceOptions> {
   const { data } = await apiClient.get<ApiSuccessResponse<AttendanceOptions>>('/attendance/options')
   return data.data

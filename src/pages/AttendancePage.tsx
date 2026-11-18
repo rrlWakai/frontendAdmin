@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, Search } from 'lucide-react'
 import { AttendanceSessionDialog } from '@/components/attendance/AttendanceSessionDialog'
+import { AttendancePolicyManagement } from '@/components/attendance/AttendancePolicyManagement'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
@@ -124,8 +125,15 @@ export function AttendancePage() {
         eyebrow="Academic operations"
         title="Attendance"
         description="Monitor class meetings and student attendance within your authorized program scope."
-        actions={<Badge tone="info">Stage 6</Badge>}
+        actions={(
+          <div className="flex items-center gap-2">
+            {user?.role === 'administrator' ? <Badge tone="info">Policy management</Badge> : null}
+            <Badge tone="info">Stage 6</Badge>
+          </div>
+        )}
       />
+
+      {user?.role === 'administrator' ? <AttendancePolicyManagement /> : null}
 
       {optionsError ? (
         <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

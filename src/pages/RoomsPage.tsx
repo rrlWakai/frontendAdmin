@@ -19,6 +19,7 @@ import {
 } from '@/services/api/rooms'
 import type {
   Room,
+  RoomAvailabilityStatus,
   RoomDetail,
   RoomInput,
   RoomPagination,
@@ -32,6 +33,13 @@ const roomStatusOptions: Array<{ value: RoomStatus; label: string }> = [
   { value: 'unavailable', label: 'Unavailable' },
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'retired', label: 'Retired' },
+]
+
+const availabilityOptions: Array<{ value: RoomAvailabilityStatus; label: string }> = [
+  { value: 'available', label: 'Available' },
+  { value: 'reserved', label: 'Reserved' },
+  { value: 'occupied', label: 'Occupied' },
+  { value: 'discrepancy', label: 'Discrepancy' },
 ]
 
 const roomTypeOptions: Array<{ value: RoomType; label: string }> = [
@@ -52,9 +60,24 @@ function roomLocation(room: Room): string {
     .join(' · ') || '—'
 }
 
+function localDate(): string {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function availabilityTone(status: RoomAvailabilityStatus | undefined): string {
+  switch (status) {
+    case 'occupied': return 'bg-blue-100 text-blue-900'
+    case 'reserved': return 'bg-amber-100 text-amber-900'
+    case 'discrepancy': return 'bg-red-100 text-red-900'
+    default: return 'bg-emerald-100 text-emerald-900'
+  }
+}
+
 export function RoomsPage() {
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
+  const canManageQr = user?.role === 'administrator'
   const [rooms, setRooms] = useState<Room[]>([])
   const [pagination, setPagination] = useState<RoomPagination>({
     current_page: 1,
@@ -64,7 +87,10 @@ export function RoomsPage() {
   })
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<RoomStatus | ''>('')
+  const [roomConditionFilter, setRoomConditionFilter] = useState<RoomStatus | ''>('')
+  const [availabilityFilter, setAvailabilityFilter] = useState<RoomAvailabilityStatus | ''>('')
+  const [buildingFilter, setBuildingFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState(localDate)
   const [typeFilter, setTypeFilter] = useState<RoomType | ''>('')
   const [page, setPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
@@ -95,7 +121,10 @@ export function RoomsPage() {
       try {
         const result = await fetchRooms({
           search: search || undefined,
-          status: statusFilter || undefined,
+          building: buildingFilter.trim() || undefined,
+          date: dateFilter || undefined,
+          availability_status: availabilityFilter || undefined,
+          room_status: roomConditionFilter || undefined,
           room_type: typeFilter || undefined,
           page,
           per_page: 25,
@@ -113,7 +142,7 @@ export function RoomsPage() {
     return () => {
       active = false
     }
-  }, [page, refreshVersion, search, statusFilter, typeFilter])
+  }, [availabilityFilter, buildingFilter, dateFilter, page, refreshVersion, roomConditionFilter, search, typeFilter])
 
   useEffect(() => {
     if (selectedRoomId === null) return
@@ -234,7 +263,7 @@ export function RoomsPage() {
       <Card>
         <CardBody>
           <form
-            className="grid gap-3 md:grid-cols-[minmax(14rem,1fr)_11rem_11rem_auto]"
+            className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(14rem,1.3fr)_minmax(10rem,0.8fr)_10rem_11rem_11rem_11rem_auto]"
             onSubmit={(event) => {
               event.preventDefault()
               setPage(1)
@@ -250,24 +279,44 @@ export function RoomsPage() {
               placeholder="Code, name, or building"
               onChange={(event) => setSearchInput(event.target.value)}
             />
+            <TextField
+              label="Building"
+              name="building"
+              value={buildingFilter}
+              placeholder="All buildings"
+              onChange={(event) => {
+                setPage(1)
+                setBuildingFilter(event.target.value)
+              }}
+            />
+            <TextField
+              label="Availability date"
+              name="date"
+              type="date"
+              value={dateFilter}
+              onChange={(event) => {
+                setPage(1)
+                setDateFilter(event.target.value)
+              }}
+            />
             <div className="space-y-1.5">
-              <label htmlFor="room-status-filter" className="block text-sm font-medium text-ink">
-                Status
+              <label htmlFor="room-availability-filter" className="block text-sm font-medium text-ink">
+                Availability
               </label>
               <select
-                id="room-status-filter"
-                value={statusFilter}
+                id="room-availability-filter"
+                value={availabilityFilter}
                 onChange={(event) => {
                   const value = event.target.value
                   setPage(1)
-                  if (value === '' || roomStatusOptions.some((option) => option.value === value)) {
-                    setStatusFilter(value as RoomStatus | '')
+                  if (value === '' || availabilityOptions.some((option) => option.value === value)) {
+                    setAvailabilityFilter(value as RoomAvailabilityStatus | '')
                   }
                 }}
                 className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               >
-                <option value="">All statuses</option>
-                {roomStatusOptions.map((option) => (
+                <option value="">All availability</option>
+                {availabilityOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -298,6 +347,28 @@ export function RoomsPage() {
                 ))}
               </select>
             </div>
+            <div className="space-y-1.5">
+              <label htmlFor="room-condition-filter" className="block text-sm font-medium text-ink">
+                Room condition
+              </label>
+              <select
+                id="room-condition-filter"
+                value={roomConditionFilter}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setPage(1)
+                  if (value === '' || roomStatusOptions.some((option) => option.value === value)) {
+                    setRoomConditionFilter(value as RoomStatus | '')
+                  }
+                }}
+                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              >
+                <option value="">All conditions</option>
+                {roomStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-end">
               <Button type="submit" variant="outline" className="w-full md:w-auto">
                 <Search className="size-4" aria-hidden="true" />
@@ -322,10 +393,10 @@ export function RoomsPage() {
               <EmptyState
                 icon={DoorOpen}
                 title="No rooms found"
-                description={search || statusFilter || typeFilter
+                description={search || buildingFilter || availabilityFilter || roomConditionFilter || typeFilter
                   ? 'Try adjusting the search or filters.'
                   : 'Create the first room to start building the schedule inventory.'}
-                action={canManage && !search && !statusFilter && !typeFilter ? (
+                action={canManage && !search && !buildingFilter && !availabilityFilter && !roomConditionFilter && !typeFilter ? (
                   <Button onClick={() => setDialogRoom(null)}>Add room</Button>
                 ) : null}
               />
@@ -333,14 +404,16 @@ export function RoomsPage() {
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[980px] text-left text-sm">
+                <table className="w-full min-w-[1280px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Room</th>
                       <th className="px-4 py-3">Location</th>
                       <th className="px-4 py-3">Capacity</th>
                       <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Availability</th>
+                      <th className="px-4 py-3">Current schedule / occupancy</th>
+                      <th className="px-4 py-3">Room condition</th>
                       <th className="px-4 py-3">Active allocations</th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
@@ -355,6 +428,28 @@ export function RoomsPage() {
                         <td className="px-4 py-4 text-ink-muted">{roomLocation(room)}</td>
                         <td className="px-4 py-4 text-ink-muted">{room.capacity} seats</td>
                         <td className="px-4 py-4 text-ink-muted">{formatRoomType(room.room_type)}</td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${availabilityTone(room.availability_status)}`}>
+                            {availabilityOptions.find((option) => option.value === room.availability_status)?.label ?? 'Available'}
+                          </span>
+                          {room.availability_status === 'discrepancy' ? (
+                            <p className="mt-1 text-xs font-medium text-red-700">Room mismatch requires review</p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4 text-xs text-ink-muted">
+                          {room.occupancy ? (
+                            <>
+                              <p className="font-semibold text-ink">{room.occupancy.subject?.code ?? 'Class'} · {room.occupancy.section?.code ?? 'Section'}</p>
+                              <p>{room.occupancy.professor.name ?? 'Professor'} · checked in {room.occupancy.checked_in_at ? new Date(room.occupancy.checked_in_at).toLocaleTimeString() : '—'}</p>
+                              <p>Scheduled until {room.occupancy.scheduled_end_at ? new Date(room.occupancy.scheduled_end_at).toLocaleTimeString() : '—'}</p>
+                            </>
+                          ) : room.scheduled ? (
+                            <>
+                              <p className="font-semibold text-ink">{room.scheduled.subject?.code ?? 'Class'} · {room.scheduled.section?.code ?? 'Section'}</p>
+                              <p>{room.scheduled.professor ?? 'Professor'} · {room.scheduled.starts_at?.slice(0, 5) ?? '—'}–{room.scheduled.ends_at?.slice(0, 5) ?? '—'}</p>
+                            </>
+                          ) : <p>No current class</p>}
+                        </td>
                         <td className="px-4 py-4">
                           <RoomStatusBadge status={room.status} />
                         </td>
@@ -435,6 +530,8 @@ export function RoomsPage() {
           error={detailError}
           onClose={closeDetails}
           onRetry={refreshDetails}
+          canManageQr={canManageQr}
+          canResolveDiscrepancies={user?.role === 'administrator'}
         />
       ) : null}
 

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '@/components/common/Button'
+import { MultiSelectField } from '@/components/common/MultiSelectField'
+import { SelectField } from '@/components/common/SelectField'
+import { TextAreaField } from '@/components/common/TextAreaField'
 import { TextField } from '@/components/common/TextField'
 import {
   fetchAnnouncementTargetOptions,
@@ -90,46 +93,8 @@ function label(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-function selectedIds(event: React.ChangeEvent<HTMLSelectElement>): number[] {
-  return Array.from(event.currentTarget.selectedOptions, (option) => Number(option.value))
-}
-
-function MultiSelect({
-  id,
-  label: fieldLabel,
-  options,
-  values,
-  onChange,
-  hint,
-}: {
-  id: string
-  label: string
-  options: AnnouncementOption[]
-  values: number[]
-  onChange: (values: number[]) => void
-  hint?: string
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium text-ink">
-        {fieldLabel}
-      </label>
-      <select
-        id={id}
-        multiple
-        value={values.map(String)}
-        onChange={(event) => onChange(selectedIds(event))}
-        className="min-h-28 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
-      <p className="text-xs text-ink-muted">{hint ?? 'Use Ctrl/Cmd to select multiple values.'}</p>
-    </div>
-  )
+function optionList(options: Array<{ id: number; name: string }>) {
+  return options.map((option) => ({ value: String(option.id), label: option.name }))
 }
 
 export function AnnouncementFormDialog({
@@ -337,62 +302,53 @@ export function AnnouncementFormDialog({
             required
             maxLength={160}
             value={values.title}
+            placeholder="Enter announcement title"
             error={fieldErrors.title?.[0]}
             onChange={(event) => update('title', event.target.value)}
           />
-          <div className="space-y-1.5">
-            <label htmlFor="announcement-category" className="block text-sm font-medium text-ink">
-              Category
-            </label>
-            <select
-              id="announcement-category"
-              value={values.category}
-              onChange={(event) => update('category', event.target.value as AnnouncementCategory)}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            >
-              {categories.map((category) => <option key={category} value={category}>{label(category)}</option>)}
-            </select>
-          </div>
+          <SelectField
+            id="announcement-category"
+            label="Category"
+            value={values.category}
+            options={categories.map((value) => ({ value, label: label(value) }))}
+            placeholder="Select announcement category"
+            error={fieldErrors.category?.[0]}
+            onChange={(value) => update('category', value as AnnouncementCategory)}
+          />
           <TextField
             label="Short summary"
             maxLength={300}
             value={values.summary}
+            placeholder="Add a short summary"
             error={fieldErrors.summary?.[0]}
             onChange={(event) => update('summary', event.target.value)}
           />
-          <div className="space-y-1.5">
-            <label htmlFor="announcement-priority" className="block text-sm font-medium text-ink">
-              Priority
-            </label>
-            <select
-              id="announcement-priority"
-              value={values.priority}
-              onChange={(event) => update('priority', event.target.value as AnnouncementPriority)}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            >
-              {priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}
-            </select>
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <label htmlFor="announcement-content" className="block text-sm font-medium text-ink">
-              Announcement
-            </label>
-            <textarea
-              id="announcement-content"
-              required
-              maxLength={20_000}
-              rows={6}
-              value={values.content}
-              aria-invalid={Boolean(fieldErrors.content?.[0])}
-              onChange={(event) => update('content', event.target.value)}
-              className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            />
-            {fieldErrors.content?.[0] ? <p className="text-xs font-medium text-red-600">{fieldErrors.content[0]}</p> : null}
-          </div>
+          <SelectField
+            id="announcement-priority"
+            label="Priority"
+            value={values.priority}
+            options={priorities.map((value) => ({ value, label: label(value) }))}
+            placeholder="Select priority"
+            error={fieldErrors.priority?.[0]}
+            onChange={(value) => update('priority', value as AnnouncementPriority)}
+          />
+          <TextAreaField
+            id="announcement-content"
+            label="Announcement"
+            required
+            maxLength={20_000}
+            rows={6}
+            value={values.content}
+            placeholder="Write your announcement"
+            error={fieldErrors.content?.[0]}
+            onChange={(event) => update('content', event.target.value)}
+            className="sm:col-span-2"
+          />
           <TextField
             label="Publish at"
             type="datetime-local"
             value={values.published_at}
+            placeholder="Select publication date and time"
             error={fieldErrors.published_at?.[0]}
             hint="Leave blank to choose a publication time when publishing."
             onChange={(event) => update('published_at', event.target.value)}
@@ -401,55 +357,46 @@ export function AnnouncementFormDialog({
             label="Expires at"
             type="datetime-local"
             value={values.expires_at}
+            placeholder="Select expiration date and time"
             error={fieldErrors.expires_at?.[0]}
             hint="Must be later than the scheduled publication date and time."
             onChange={(event) => update('expires_at', event.target.value)}
           />
-          <div className="space-y-1.5 sm:col-span-2">
-            <label htmlFor="announcement-audience" className="block text-sm font-medium text-ink">
-              Audience
-            </label>
-            <select
-              id="announcement-audience"
-              value={values.audience_scope}
-              onChange={(event) => update('audience_scope', event.target.value as FormValues['audience_scope'])}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            >
-              <option value="all">All active users</option>
-              <option value="custom">Custom audience</option>
-            </select>
-          </div>
+          <SelectField
+            id="announcement-audience"
+            label="Audience"
+            value={values.audience_scope}
+            options={[
+              { value: 'all', label: 'All active users' },
+              { value: 'custom', label: 'Custom audience' },
+            ]}
+            placeholder="Select audience"
+            onChange={(value) => update('audience_scope', value as FormValues['audience_scope'])}
+            className="sm:col-span-2"
+          />
           {activityChoices.length ? (
-            <div className="space-y-1.5 sm:col-span-2">
-              <label htmlFor="announcement-activity" className="block text-sm font-medium text-ink">
-                Associated activity
-              </label>
-              <select
-                id="announcement-activity"
-                value={selectedActivityId ?? ''}
-                disabled={Boolean(sourceActivity)}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setSelectedActivityId(value ? Number(value) : null)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50"
-              >
-                <option value="">No activity (general announcement)</option>
-                {activityChoices.map((activity) => (
-                  <option key={activity.id} value={activity.id}>
-                    {activity.title}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-ink-muted">
-                {sourceActivity
-                  ? 'Linked to the activity being published.'
-                  : 'Optional. Linking an activity does not send a notification by itself.'}
-              </p>
-              {fieldErrors.activity_id?.[0] ? (
-                <p className="text-xs font-medium text-red-600">{fieldErrors.activity_id[0]}</p>
-              ) : null}
-            </div>
+            <SelectField
+              id="announcement-activity"
+              label="Associated activity"
+              value={selectedActivityId ? String(selectedActivityId) : ''}
+              options={[
+                { value: '', label: 'No activity (general announcement)' },
+                ...activityChoices.map((activity) => ({
+                  value: String(activity.id),
+                  label: activity.title,
+                })),
+              ]}
+              placeholder="Choose an activity"
+              searchable={activityChoices.length > 8}
+              searchPlaceholder="Search activities"
+              disabled={Boolean(sourceActivity)}
+              error={fieldErrors.activity_id?.[0]}
+              hint={sourceActivity
+                ? 'Linked to the activity being published.'
+                : 'Optional. Linking an activity does not send a notification by itself.'}
+              onChange={(value) => setSelectedActivityId(value ? Number(value) : null)}
+              className="sm:col-span-2"
+            />
           ) : null}
         </div>
 
@@ -459,36 +406,49 @@ export function AnnouncementFormDialog({
           ) : options ? (
             <div className="space-y-4 rounded-xl border border-line bg-slate-50 p-4">
               {options.roles.length ? (
-                <MultiSelect
+                <MultiSelectField
                   id="announcement-roles"
                   label="Roles"
-                  options={options.roles}
-                  values={targets.role_ids}
-                  onChange={(ids) => updateTargets('role_ids', ids)}
+                  options={optionList(options.roles)}
+                  values={targets.role_ids.map(String)}
+                  placeholder="Select target roles"
+                  searchable={options.roles.length > 8}
+                  searchPlaceholder="Search roles"
+                  onChange={(values) => updateTargets('role_ids', values.map(Number))}
                 />
               ) : null}
-              <MultiSelect
+              <MultiSelectField
                 id="announcement-programs"
                 label="Programs"
-                options={options.programs}
-                values={targets.program_ids}
-                onChange={(ids) => updateTargets('program_ids', ids)}
+                options={optionList(options.programs)}
+                values={targets.program_ids.map(String)}
+                placeholder="Select target programs"
+                searchable={options.programs.length > 8}
+                searchPlaceholder="Search programs"
                 hint="Department personnel must include at least one assigned program."
+                onChange={(values) => updateTargets('program_ids', values.map(Number))}
               />
               <div className="grid gap-4 sm:grid-cols-2">
-                <MultiSelect
+                <MultiSelectField
                   id="announcement-years"
                   label="Year levels"
-                  options={options.year_levels.map((item) => ({ ...item, name: item.name || `Year ${item.level}` }))}
-                  values={targets.year_level_ids}
-                  onChange={(ids) => updateTargets('year_level_ids', ids)}
+                  options={optionList(options.year_levels.map((item) => ({
+                    ...item,
+                    name: item.name || `Year ${item.level}`,
+                  })))}
+                  values={targets.year_level_ids.map(String)}
+                  placeholder="Select year levels"
+                  onChange={(values) => updateTargets('year_level_ids', values.map(Number))}
                 />
-                <MultiSelect
+                <MultiSelectField
                   id="announcement-sections"
                   label="Sections"
-                  options={sections}
-                  values={targets.section_ids}
-                  onChange={(ids) => updateTargets('section_ids', ids)}
+                  options={optionList(sections)}
+                  values={targets.section_ids.map(String)}
+                  placeholder="Select sections"
+                  searchable={sections.length > 8}
+                  searchPlaceholder="Search sections"
+                  onChange={(values) => updateTargets('section_ids', values.map(Number))}
                 />
               </div>
               <div className="space-y-2">
@@ -499,7 +459,7 @@ export function AnnouncementFormDialog({
                   id="announcement-user-search"
                   label="Search active users"
                   value={userSearch}
-                  placeholder="Type at least two characters"
+                  placeholder="Search active users by name"
                   onChange={(event) => setUserSearch(event.target.value)}
                 />
                 {users.length ? (

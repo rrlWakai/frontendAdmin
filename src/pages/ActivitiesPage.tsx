@@ -23,6 +23,7 @@ import { Card, CardBody } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
+import { SelectField } from '@/components/common/SelectField'
 import { TextField } from '@/components/common/TextField'
 import {
   cancelActivity,
@@ -113,6 +114,16 @@ const announcementCategoryOptions: Array<{ value: AnnouncementCategory | ''; lab
   { value: 'department', label: 'Department' },
   { value: 'event', label: 'Event' },
   { value: 'advisory', label: 'Advisory' },
+]
+const audienceFilterOptions: Array<{ value: 'all' | 'custom' | ''; label: string }> = [
+  { value: '', label: 'All audiences' },
+  { value: 'all', label: 'All active users' },
+  { value: 'custom', label: 'Custom audience' },
+]
+const linkFilterOptions: Array<{ value: LinkFilter; label: string }> = [
+  { value: 'all', label: 'All announcements' },
+  { value: 'linked', label: 'Activity-linked' },
+  { value: 'general', label: 'General' },
 ]
 
 function formatLabel(value: string): string {
@@ -1101,32 +1112,53 @@ export function ActivitiesPage() {
               <TextField
                 label="Search"
                 value={searchInput}
-                placeholder="Title, description, organizer"
+                placeholder="Search activities..."
                 onChange={(event) => setSearchInput(event.target.value)}
               />
-              <div className="space-y-1.5">
-                <label htmlFor="activity-category-filter" className="block text-sm font-medium text-ink">Category</label>
-                <select id="activity-category-filter" value={category} onChange={(event) => { setPage(1); setCategory(event.target.value as ActivityCategory | '') }} className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm">
-                  {categories.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="activity-status-filter" className="block text-sm font-medium text-ink">Status</label>
-                <select id="activity-status-filter" value={status} onChange={(event) => { setPage(1); setStatus(event.target.value as ActivityStatus | '') }} className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm">
-                  {statuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="activity-audience-filter" className="block text-sm font-medium text-ink">Audience</label>
-                <select id="activity-audience-filter" value={audience} onChange={(event) => { setPage(1); setAudience(event.target.value as 'all' | 'custom' | '') }} className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm">
-                  <option value="">All audiences</option>
-                  <option value="all">All active users</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <TextField label="Organizer" value={organizer} onChange={(event) => { setPage(1); setOrganizer(event.target.value) }} />
-              <TextField label="From date" type="date" value={fromDate} onChange={(event) => { setPage(1); setFromDate(event.target.value) }} />
-              <TextField label="To date" type="date" value={toDate} onChange={(event) => { setPage(1); setToDate(event.target.value) }} />
+              <SelectField
+                id="activity-category-filter"
+                label="Category"
+                value={category}
+                options={categories}
+                placeholder="Select activity type"
+                onChange={(value) => { setPage(1); setCategory(value as ActivityCategory | '') }}
+              />
+              <SelectField
+                id="activity-status-filter"
+                label="Status"
+                value={status}
+                options={statuses}
+                placeholder="Select activity status"
+                onChange={(value) => { setPage(1); setStatus(value as ActivityStatus | '') }}
+              />
+              <SelectField
+                id="activity-audience-filter"
+                label="Audience"
+                value={audience}
+                options={audienceFilterOptions}
+                placeholder="Select audience"
+                onChange={(value) => { setPage(1); setAudience(value as 'all' | 'custom' | '') }}
+              />
+              <TextField
+                label="Organizer"
+                value={organizer}
+                placeholder="Search organizer or department"
+                onChange={(event) => { setPage(1); setOrganizer(event.target.value) }}
+              />
+              <TextField
+                label="From date"
+                type="date"
+                value={fromDate}
+                placeholder="Select start date"
+                onChange={(event) => { setPage(1); setFromDate(event.target.value) }}
+              />
+              <TextField
+                label="To date"
+                type="date"
+                value={toDate}
+                placeholder="Select end date"
+                onChange={(event) => { setPage(1); setToDate(event.target.value) }}
+              />
               <div className="flex items-end">
                 <Button type="submit" variant="outline" className="w-full xl:w-auto">Search</Button>
               </div>
@@ -1314,46 +1346,35 @@ export function ActivitiesPage() {
               }}
             >
               <TextField
-                label="Search announcements"
+                label="Search"
                 value={announcementSearchInput}
-                placeholder="Title, summary, or content"
+                placeholder="Search announcements..."
                 onChange={(event) => setAnnouncementSearchInput(event.target.value)}
               />
-              <div className="space-y-1.5">
-                <label htmlFor="announcement-status-filter" className="block text-sm font-medium text-ink">Status</label>
-                <select
-                  id="announcement-status-filter"
-                  value={announcementStatus}
-                  onChange={(event) => { setAnnouncementPage(1); setAnnouncementStatus(event.target.value as AnnouncementStatus | '') }}
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm"
-                >
-                  {announcementStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="announcement-category-filter" className="block text-sm font-medium text-ink">Category</label>
-                <select
-                  id="announcement-category-filter"
-                  value={announcementCategory}
-                  onChange={(event) => { setAnnouncementPage(1); setAnnouncementCategory(event.target.value as AnnouncementCategory | '') }}
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm"
-                >
-                  {announcementCategoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="announcement-link-filter" className="block text-sm font-medium text-ink">Association</label>
-                <select
-                  id="announcement-link-filter"
-                  value={linkFilter}
-                  onChange={(event) => { setAnnouncementPage(1); setLinkFilter(event.target.value as LinkFilter) }}
-                  className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm"
-                >
-                  <option value="all">All announcements</option>
-                  <option value="linked">Activity-linked</option>
-                  <option value="general">General</option>
-                </select>
-              </div>
+              <SelectField
+                id="announcement-status-filter"
+                label="Status"
+                value={announcementStatus}
+                options={announcementStatusOptions}
+                placeholder="Select publication status"
+                onChange={(value) => { setAnnouncementPage(1); setAnnouncementStatus(value as AnnouncementStatus | '') }}
+              />
+              <SelectField
+                id="announcement-category-filter"
+                label="Category"
+                value={announcementCategory}
+                options={announcementCategoryOptions}
+                placeholder="Select announcement category"
+                onChange={(value) => { setAnnouncementPage(1); setAnnouncementCategory(value as AnnouncementCategory | '') }}
+              />
+              <SelectField
+                id="announcement-link-filter"
+                label="Association"
+                value={linkFilter}
+                options={linkFilterOptions}
+                placeholder="Select association"
+                onChange={(value) => { setAnnouncementPage(1); setLinkFilter(value as LinkFilter) }}
+              />
               <div className="flex items-end">
                 <Button type="submit" variant="outline" className="w-full md:w-auto">Search</Button>
               </div>

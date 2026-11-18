@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '@/components/common/Button'
+import { MultiSelectField } from '@/components/common/MultiSelectField'
+import { SelectField } from '@/components/common/SelectField'
+import { TextAreaField } from '@/components/common/TextAreaField'
 import { TextField } from '@/components/common/TextField'
 import { fetchActivityOptions } from '@/services/api/activities'
 import type {
   Activity,
   ActivityCategory,
   ActivityInput,
-  ActivityOption,
   ActivityOptions,
   ActivityTargetIds,
 } from '@/types/activity'
@@ -83,46 +85,8 @@ function label(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
-function selectedIds(event: React.ChangeEvent<HTMLSelectElement>): number[] {
-  return Array.from(event.currentTarget.selectedOptions, (option) => Number(option.value))
-}
-
-function MultiSelect({
-  id,
-  label: fieldLabel,
-  options,
-  values,
-  onChange,
-  hint,
-}: {
-  id: string
-  label: string
-  options: ActivityOption[]
-  values: number[]
-  onChange: (values: number[]) => void
-  hint?: string
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium text-ink">
-        {fieldLabel}
-      </label>
-      <select
-        id={id}
-        multiple
-        value={values.map(String)}
-        onChange={(event) => onChange(selectedIds(event))}
-        className="min-h-28 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
-      <p className="text-xs text-ink-muted">{hint ?? 'Use Ctrl/Cmd to select multiple values.'}</p>
-    </div>
-  )
+function optionList(options: Array<{ id: number; name: string }>) {
+  return options.map((option) => ({ value: String(option.id), label: option.name }))
 }
 
 export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFormDialogProps) {
@@ -294,25 +258,25 @@ export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFor
             required
             maxLength={160}
             value={values.title}
+            placeholder="Enter activity title"
             error={fieldErrors.title?.[0]}
             onChange={(event) => update('title', event.target.value)}
           />
-          <div className="space-y-1.5">
-            <label htmlFor="activity-category" className="block text-sm font-medium text-ink">Category</label>
-            <select
-              id="activity-category"
-              value={values.category}
-              onChange={(event) => update('category', event.target.value as ActivityCategory)}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm"
-            >
-              {categories.map((category) => <option key={category} value={category}>{label(category)}</option>)}
-            </select>
-          </div>
+          <SelectField
+            id="activity-category"
+            label="Category"
+            value={values.category}
+            options={categories.map((value) => ({ value, label: label(value) }))}
+            placeholder="Select activity type"
+            error={fieldErrors.category?.[0]}
+            onChange={(value) => update('category', value as ActivityCategory)}
+          />
           <TextField
             label="Organizer / department"
             required
             maxLength={160}
             value={values.organizer_name}
+            placeholder="Enter organizer or department"
             error={fieldErrors.organizer_name?.[0]}
             onChange={(event) => update('organizer_name', event.target.value)}
           />
@@ -320,28 +284,28 @@ export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFor
             label="Short description"
             maxLength={300}
             value={values.summary}
+            placeholder="Add a short summary"
             error={fieldErrors.summary?.[0]}
             onChange={(event) => update('summary', event.target.value)}
           />
-          <div className="space-y-1.5 sm:col-span-2">
-            <label htmlFor="activity-description" className="block text-sm font-medium text-ink">Full description</label>
-            <textarea
-              id="activity-description"
-              required
-              maxLength={20_000}
-              rows={5}
-              value={values.description}
-              aria-invalid={Boolean(fieldErrors.description?.[0])}
-              onChange={(event) => update('description', event.target.value)}
-              className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            />
-            {fieldErrors.description?.[0] ? <p className="text-xs font-medium text-red-600">{fieldErrors.description[0]}</p> : null}
-          </div>
+          <TextAreaField
+            id="activity-description"
+            label="Full description"
+            required
+            maxLength={20_000}
+            rows={5}
+            value={values.description}
+            placeholder="Describe the activity"
+            error={fieldErrors.description?.[0]}
+            onChange={(event) => update('description', event.target.value)}
+            className="sm:col-span-2"
+          />
           <TextField
             label="Starts at (Philippine time)"
             type="datetime-local"
             required
             value={values.starts_at}
+            placeholder="Select start date"
             error={fieldErrors.starts_at?.[0]}
             onChange={(event) => update('starts_at', event.target.value)}
           />
@@ -350,33 +314,33 @@ export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFor
             type="datetime-local"
             required
             value={values.ends_at}
+            placeholder="Select end date"
             error={fieldErrors.ends_at?.[0]}
             onChange={(event) => update('ends_at', event.target.value)}
           />
-          <div className="space-y-1.5">
-            <label htmlFor="activity-room" className="block text-sm font-medium text-ink">CCS room</label>
-            <select
-              id="activity-room"
-              value={values.room_id}
-              onChange={(event) => update('room_id', event.target.value)}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm"
-            >
-              <option value="">Use an external venue</option>
-              {options?.rooms
+          <SelectField
+            id="activity-room"
+            label="CCS room"
+            value={values.room_id}
+            options={[
+              { value: '', label: 'Use an external venue' },
+              ...(options?.rooms
                 .filter((room) => room.status === 'available' || values.room_id === String(room.id))
-                .map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.code} · {room.name}{room.building ? ` (${room.building})` : ''}{room.status !== 'available' ? ` · ${label(room.status ?? '')}` : ''}
-                </option>
-                ))}
-            </select>
-            {fieldErrors.room_id?.[0] ? <p className="text-xs font-medium text-red-600">{fieldErrors.room_id[0]}</p> : null}
-          </div>
+                .map((room) => ({
+                  value: String(room.id),
+                  label: `${room.code} · ${room.name}${room.building ? ` (${room.building})` : ''}${room.status !== 'available' ? ` · ${label(room.status ?? '')}` : ''}`,
+                })) ?? []),
+            ]}
+            placeholder="Select a CCS room"
+            error={fieldErrors.room_id?.[0]}
+            onChange={(value) => update('room_id', value)}
+          />
           <TextField
             label="External venue"
             required={!values.room_id}
             maxLength={160}
             value={values.venue_name}
+            placeholder="Enter venue or location"
             error={fieldErrors.venue_name?.[0]}
             onChange={(event) => update('venue_name', event.target.value)}
           />
@@ -384,22 +348,22 @@ export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFor
             label="Building / location details"
             maxLength={255}
             value={values.location_details}
+            placeholder="Add building or location details"
             error={fieldErrors.location_details?.[0]}
             onChange={(event) => update('location_details', event.target.value)}
           />
-          <div className="space-y-1.5">
-            <label htmlFor="activity-audience" className="block text-sm font-medium text-ink">Audience</label>
-            <select
-              id="activity-audience"
-              value={values.audience_scope}
-              disabled={!canChooseAll}
-              onChange={(event) => update('audience_scope', event.target.value as FormValues['audience_scope'])}
-              className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm disabled:bg-slate-100"
-            >
-              {canChooseAll ? <option value="all">All active users</option> : null}
-              <option value="custom">Custom audience</option>
-            </select>
-          </div>
+          <SelectField
+            id="activity-audience"
+            label="Audience"
+            value={values.audience_scope}
+            options={[
+              ...(canChooseAll ? [{ value: 'all', label: 'All active users' }] : []),
+              { value: 'custom', label: 'Custom audience' },
+            ]}
+            placeholder="Select audience"
+            disabled={!canChooseAll}
+            onChange={(value) => update('audience_scope', value as FormValues['audience_scope'])}
+          />
         </div>
 
         {values.audience_scope === 'custom' ? (
@@ -407,42 +371,55 @@ export function ActivityFormDialog({ activity, onCancel, onSubmit }: ActivityFor
             <p role="status" className="text-sm text-ink-muted">Loading audience options…</p>
           ) : options ? (
             <div className="space-y-4 rounded-xl border border-line bg-slate-50 p-4">
-              <MultiSelect
+              <MultiSelectField
                 id="activity-roles"
                 label="Roles"
-                options={options.roles}
-                values={targets.role_ids}
-                onChange={(ids) => updateTargets('role_ids', ids)}
+                options={optionList(options.roles)}
+                values={targets.role_ids.map(String)}
+                placeholder="Select target roles"
+                searchable={options.roles.length > 8}
+                searchPlaceholder="Search roles"
+                onChange={(values) => updateTargets('role_ids', values.map(Number))}
               />
-              <MultiSelect
+              <MultiSelectField
                 id="activity-programs"
                 label="Programs"
-                options={options.programs}
-                values={targets.program_ids}
-                onChange={(ids) => updateTargets('program_ids', ids)}
+                options={optionList(options.programs)}
+                values={targets.program_ids.map(String)}
+                placeholder="Select target programs"
+                searchable={options.programs.length > 8}
+                searchPlaceholder="Search programs"
                 hint="Department Personnel must include at least one assigned program."
+                onChange={(values) => updateTargets('program_ids', values.map(Number))}
               />
               <div className="grid gap-4 sm:grid-cols-2">
-                <MultiSelect
+                <MultiSelectField
                   id="activity-years"
                   label="Year levels"
-                  options={options.year_levels}
-                  values={targets.year_level_ids}
-                  onChange={(ids) => updateTargets('year_level_ids', ids)}
+                  options={optionList(options.year_levels.map((item) => ({
+                    ...item,
+                    name: item.name || `Year ${item.level}`,
+                  })))}
+                  values={targets.year_level_ids.map(String)}
+                  placeholder="Select year levels"
+                  onChange={(values) => updateTargets('year_level_ids', values.map(Number))}
                 />
-                <MultiSelect
+                <MultiSelectField
                   id="activity-sections"
                   label="Sections"
-                  options={options.sections}
-                  values={targets.section_ids}
-                  onChange={(ids) => updateTargets('section_ids', ids)}
+                  options={optionList(options.sections)}
+                  values={targets.section_ids.map(String)}
+                  placeholder="Select sections"
+                  searchable={options.sections.length > 8}
+                  searchPlaceholder="Search sections"
+                  onChange={(values) => updateTargets('section_ids', values.map(Number))}
                 />
               </div>
               <div className="space-y-2">
                 <TextField
                   label="Find individual users"
                   value={userSearch}
-                  placeholder="Type at least two characters"
+                  placeholder="Search active users by name"
                   onChange={(event) => setUserSearch(event.target.value)}
                 />
                 {visibleUsers.length ? (

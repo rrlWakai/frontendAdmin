@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { RoomStatusBadge } from '@/components/rooms/RoomStatusBadge'
+import { RoomOccupancyHistory } from '@/components/rooms/RoomOccupancyHistory'
+import { RoomQrManagement } from '@/components/rooms/RoomQrManagement'
 import type { RoomAllocationRecord, RoomDetail } from '@/types/room'
 
 interface RoomDetailsDialogProps {
@@ -10,6 +12,8 @@ interface RoomDetailsDialogProps {
   error: string | null
   onClose: () => void
   onRetry: () => void
+  canManageQr: boolean
+  canResolveDiscrepancies: boolean
 }
 
 const dayLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -42,6 +46,8 @@ export function RoomDetailsDialog({
   error,
   onClose,
   onRetry,
+  canManageQr,
+  canResolveDiscrepancies,
 }: RoomDetailsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
@@ -197,6 +203,19 @@ export function RoomDetailsDialog({
                 </p>
               )}
             </section>
+
+            {canManageQr ? (
+              <RoomQrManagement
+                roomId={room.id}
+                roomCode={room.code}
+                roomName={room.name}
+              />
+            ) : null}
+
+            <RoomOccupancyHistory
+              roomId={room.id}
+              canResolve={canResolveDiscrepancies}
+            />
           </>
         ) : null}
       </div>

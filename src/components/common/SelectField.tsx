@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 export interface SelectOption {
@@ -27,6 +27,8 @@ interface SelectFieldProps {
   hint?: string
   required?: boolean
   disabled?: boolean
+  searchable?: boolean
+  searchPlaceholder?: string
   className?: string
   id?: string
   name?: string
@@ -42,6 +44,8 @@ export function SelectField({
   hint,
   required = false,
   disabled = false,
+  searchable = false,
+  searchPlaceholder = 'Search options',
   className,
   id,
   name,
@@ -52,12 +56,17 @@ export function SelectField({
   const messageId = `${fieldId}-message`
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [searchQuery, setSearchQuery] = useState('')
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
   const selectedIndex = options.findIndex((option) => option.value === value)
   const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const visibleOptions = searchable && normalizedSearch
+    ? options.filter((option) => option.label.toLowerCase().includes(normalizedSearch))
+    : options
 
   function optionId(index: number): string {
     return `${fieldId}-option-${index}`
@@ -96,13 +105,13 @@ export function SelectField({
         })
   }
 
-  function nextEnabledIndex(start: number, direction: 1 | -1): number {
-    if (options.length === 0) return -1
+  function nextEnabledIndex(list: SelectOption[], start: number, direction: 1 | -1): number {
+    if (list.length === 0) return -1
 
     let index = start
-    for (let step = 0; step < options.length; step += 1) {
-      index = (index + direction + options.length) % options.length
-      if (!options[index].disabled) return index
+    for (let step = 0; step < list.length; step += 1) {
+      index = (index + direction + list.length) % list.length
+      if (!list[index].disabled) return index
     }
 
     return -1
@@ -112,16 +121,18 @@ export function SelectField({
     if (disabled) return
 
     setIsOpen(true)
+    setSearchQuery('')
     setActiveIndex(
-      selectedIndex >= 0 && !options[selectedIndex]?.disabled
+      !searchable && selectedIndex >= 0 && !options[selectedIndex]?.disabled
         ? selectedIndex
-        : nextEnabledIndex(-1, 1),
+        : nextEnabledIndex(options, -1, 1),
     )
   }
 
   function closeMenu(focusTrigger = false) {
     setIsOpen(false)
     setActiveIndex(-1)
+    setSearchQuery('')
     if (focusTrigger) triggerRef.current?.focus()
   }
 
@@ -133,7 +144,7 @@ export function SelectField({
   }
 
   function moveActive(direction: 1 | -1) {
-    setActiveIndex((current) => nextEnabledIndex(current, direction))
+    setActiveIndex((current) => nextEnabledIndex(visibleOptions, current, direction))
   }
 
   function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -154,7 +165,7 @@ export function SelectField({
       case ' ':
         event.preventDefault()
         if (isOpen && activeIndex >= 0) {
-          const option = options[activeIndex]
+          const option = visibleOptions[activeIndex]
           if (option) selectOption(option)
         } else {
           openMenu()
@@ -163,13 +174,13 @@ export function SelectField({
       case 'Home':
         if (isOpen) {
           event.preventDefault()
-          setActiveIndex(nextEnabledIndex(-1, 1))
+          setActiveIndex(nextEnabledIndex(visibleOptions, -1, 1))
         }
         break
       case 'End':
         if (isOpen) {
           event.preventDefault()
-          setActiveIndex(nextEnabledIndex(options.length, -1))
+          setActiveIndex(nextEnabledIndex(visibleOptions, visibleOptions.length, -1))
         }
         break
       case 'Escape':
@@ -180,6 +191,32 @@ export function SelectField({
         break
       case 'Tab':
         if (isOpen) closeMenu()
+        break
+    }
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        moveActive(1)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        moveActive(-1)
+        break
+      case 'Enter': {
+        event.preventDefault()
+        const option = visibleOptions[activeIndex]
+        if (option) selectOption(option)
+        break
+      }
+      case 'Escape':
+        event.preventDefault()
+        closeMenu(true)
+        break
+      case 'Tab':
+        closeMenu()
         break
     }
   }
@@ -216,6 +253,15 @@ export function SelectField({
 
     document.getElementById(optionId(activeIndex))?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex, isOpen])
+
+  useEffect(() => {
+    if (isOpen && searchable) searchRef.current?.focus()
+  }, [isOpen, searchable])
+
+  useEffect(() => {
+    if (!isOpen) return
+    setActiveIndex(nextEnabledIndex(visibleOptions, -1, 1))
+  }, [normalizedSearch])
 
   useEffect(() => {
     if (disabled) closeMenu()
@@ -262,12 +308,12 @@ export function SelectField({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={cn(
-          'flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-line bg-white px-3 text-left text-sm text-ink shadow-sm transition hover:border-stone-300 focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-ink-muted',
+          'flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-line bg-white px-3 text-left text-sm text-ink shadow-sm transition hover:border-stone-300 hover:bg-stone-50/40 focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-ink-muted/70',
           error && 'border-red-400 focus:border-red-500 focus:ring-red-500/20',
-          isOpen && !error && 'border-maroon-500 ring-2 ring-maroon-500/20',
+          isOpen && !error && 'border-maroon-500 bg-white ring-2 ring-maroon-500/15',
         )}
       >
-        <span className={cn('min-w-0 truncate', !selectedOption && 'text-ink-muted/70')}>
+        <span className={cn('min-w-0 truncate', !selectedOption && 'text-ink-muted/80')}>
           {selectedOption?.label ?? placeholder}
         </span>
         <ChevronDown
@@ -278,14 +324,30 @@ export function SelectField({
 
       {isOpen && menuPosition ? (
         <div
-          ref={menuRef}
           id={listboxId}
           role="listbox"
           aria-labelledby={fieldId}
           style={menuStyle}
-          className="fixed z-50 overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-[0_16px_36px_-24px_rgba(23,23,23,0.45)]"
+          className="fixed z-[70] overflow-y-auto rounded-xl border border-line bg-white py-1 shadow-[0_18px_40px_-24px_rgba(23,23,23,0.55)]"
         >
-          {options.length ? options.map((option, index) => {
+          {searchable ? (
+            <div className="sticky top-0 z-10 border-b border-line bg-white px-2.5 py-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchQuery}
+                  aria-label={searchPlaceholder}
+                  placeholder={searchPlaceholder}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  className="h-9 w-full rounded-lg border border-line bg-stone-50 pl-8 pr-2.5 text-sm text-ink shadow-sm transition placeholder:text-ink-muted/75 focus:border-maroon-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
+                />
+              </div>
+            </div>
+          ) : null}
+          {visibleOptions.length ? visibleOptions.map((option, index) => {
             const isSelected = option.value === value
             const isActive = index === activeIndex
 
@@ -302,11 +364,11 @@ export function SelectField({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => selectOption(option)}
                 className={cn(
-                  'mx-1 flex cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 py-2 text-sm transition-colors',
+                  'mx-1.5 flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors',
                   option.disabled && 'cursor-not-allowed text-ink-muted/50',
-                  !option.disabled && isActive && 'bg-stone-100 text-ink',
+                  !option.disabled && isActive && 'bg-maroon-50 text-maroon-900',
                   !option.disabled && !isActive && 'text-ink hover:bg-stone-50',
-                  isSelected && !option.disabled && 'font-medium text-maroon-800',
+                  isSelected && !option.disabled && 'font-medium text-maroon-900',
                 )}
               >
                 <span className="min-w-0 truncate">{option.label}</span>
@@ -314,7 +376,9 @@ export function SelectField({
               </div>
             )
           }) : (
-            <p className="px-3 py-2 text-sm text-ink-muted">No options available.</p>
+            <p className="px-3 py-2 text-sm text-ink-muted">
+              {normalizedSearch ? 'No matching options.' : 'No options available.'}
+            </p>
           )}
         </div>
       ) : null}

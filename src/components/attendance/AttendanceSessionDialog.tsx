@@ -16,7 +16,7 @@ interface AttendanceSessionDialogProps {
   onSaved: () => void
 }
 
-const statuses: AttendanceStatus[] = ['present', 'absent', 'late', 'excused']
+const statuses: AttendanceStatus[] = ['present', 'absent', 'late']
 
 export function AttendanceSessionDialog({
   sessionId,
@@ -215,6 +215,9 @@ export function AttendanceSessionDialog({
                               {statuses.map((status) => (
                                 <option key={status} value={status}>{status}</option>
                               ))}
+                              {attendance.status === 'excused' ? (
+                                <option value="excused">excused</option>
+                              ) : null}
                             </select>
                           ) : (
                             <Badge tone={attendance ? 'success' : 'neutral'}>
