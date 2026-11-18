@@ -7,6 +7,34 @@ export interface StudentProgram {
   status: string
 }
 
+export interface StudentPlacement {
+  id: number
+  status: string
+  is_current: boolean
+  effective_on: string | null
+  ends_on: string | null
+  academic_year: { id: number; label: string } | null
+  academic_term: {
+    id: number
+    academic_year: string
+    term: string
+    name: string
+  } | null
+  year_level: { id: number; level: number; name: string } | null
+  major: { id: number; code: string; name: string } | null
+  section: { id: number; code: string; name: string | null } | null
+}
+
+export interface StudentMajorSelectionSummary {
+  id: number
+  status: string
+  selected_at: string | null
+  reviewed_at: string | null
+  remarks: string | null
+  major: { id: number; code: string; name: string } | null
+  academic_year: { id: number; label: string } | null
+}
+
 export interface StudentDirectoryRecord {
   id: number
   user_id: number
@@ -18,6 +46,7 @@ export interface StudentDirectoryRecord {
   admitted_on: string | null
   created_at: string | null
   program: StudentProgram | null
+  current_placement: StudentPlacement | null
 }
 
 export interface StudentOffering {
@@ -56,6 +85,8 @@ export interface StudentEnrollment {
 export type StudentDetail = Omit<StudentDirectoryRecord, 'email'> & {
   email?: string
   enrollments: StudentEnrollment[]
+  placements: StudentPlacement[]
+  major_selections: StudentMajorSelectionSummary[]
 }
 
 export interface StudentPagination {
@@ -74,6 +105,9 @@ export interface StudentFilters {
   search?: string
   status?: AccountStatus | ''
   program_id?: number
+  year_level_id?: number
+  major_id?: number
+  section_id?: number
   page?: number
   per_page?: number
 }

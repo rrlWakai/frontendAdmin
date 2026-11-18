@@ -2,7 +2,14 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 import { AdminLayout } from '@/layouts/AdminLayout'
 import { AcademicPage } from '@/pages/AcademicPage'
+import { AcademicStructurePage } from '@/pages/AcademicStructurePage'
 import { AcademicTermsPage } from '@/pages/AcademicTermsPage'
+import { AcademicYearsPage } from '@/pages/AcademicYearsPage'
+import { CurriculumRequirementsPage } from '@/pages/CurriculumRequirementsPage'
+import { MajorSelectionPeriodsPage } from '@/pages/MajorSelectionPeriodsPage'
+import { MajorSelectionsPage } from '@/pages/MajorSelectionsPage'
+import { MajorsPage } from '@/pages/MajorsPage'
+import { PromotionsPage } from '@/pages/PromotionsPage'
 import { ActivitiesPage } from '@/pages/ActivitiesPage'
 import { AttendancePage } from '@/pages/AttendancePage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -55,6 +62,41 @@ const routes: RouteObject[] = [
             path: 'academic',
             element: <AcademicPage />,
             handle: { title: 'Academic programs' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/structure',
+            element: <AcademicStructurePage />,
+            handle: { title: 'Academic structure' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/academic-years',
+            element: <AcademicYearsPage />,
+            handle: { title: 'Academic years' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/majors',
+            element: <MajorsPage />,
+            handle: { title: 'Majors' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/curriculum',
+            element: <CurriculumRequirementsPage />,
+            handle: { title: 'Curriculum requirements' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/selection-periods',
+            element: <MajorSelectionPeriodsPage />,
+            handle: { title: 'Major selection periods' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/major-selections',
+            element: <MajorSelectionsPage />,
+            handle: { title: 'Major selections' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/promotions',
+            element: <PromotionsPage />,
+            handle: { title: 'Promotion runs' } satisfies RouteHandle,
           },
           {
             path: 'academic/terms',

@@ -22,8 +22,27 @@ const config: AcademicPageConfig<AcademicTerm> = {
     { value: 'completed', label: 'Completed' },
     { value: 'archived', label: 'Archived' },
   ],
+  filters: [
+    {
+      key: 'academic_year_id',
+      label: 'Academic years',
+      options: (choices) => choices.academic_years.map((year) => ({
+        value: String(year.id),
+        label: year.label,
+      })),
+    },
+  ],
   fields: [
-    { name: 'academic_year', label: 'Academic year (YYYY-YYYY)', type: 'text', required: true, maxLength: 9 },
+    {
+      name: 'academic_year_id',
+      label: 'Academic year',
+      type: 'select',
+      required: true,
+      options: (choices) => choices.academic_years.map((year) => ({
+        value: String(year.id),
+        label: `${year.label}${year.status === 'archived' ? ' (archived)' : ''}`,
+      })),
+    },
     {
       name: 'term',
       label: 'Term classification',

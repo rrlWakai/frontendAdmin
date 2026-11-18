@@ -40,7 +40,14 @@ export interface AcademicFormField<T extends AcademicRecord> {
 }
 
 export interface AcademicFilter {
-  key: 'program_id' | 'year_level_id' | 'academic_term_id'
+  key:
+    | 'program_id'
+    | 'year_level_id'
+    | 'academic_term_id'
+    | 'academic_year_id'
+    | 'major_id'
+    | 'subject_id'
+    | 'target_year_level_id'
   label: string
   options: (choices: AcademicOptions) => SelectOption[]
 }
@@ -522,7 +529,10 @@ export function AcademicManagementPage<T extends AcademicRecord>({
                     {filter.options(options ?? {
                       programs: [],
                       year_levels: [],
+                      academic_years: [],
+                      majors: [],
                       terms: [],
+                      subjects: [],
                     }).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}

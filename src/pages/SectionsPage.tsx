@@ -39,6 +39,14 @@ const config: AcademicPageConfig<AcademicSection> = {
         label: `${term.academic_year} — ${term.name}`,
       })),
     },
+    {
+      key: 'major_id',
+      label: 'Majors',
+      options: (choices) => choices.majors.map((major) => ({
+        value: String(major.id),
+        label: `${major.code} — ${major.name}`,
+      })),
+    },
   ],
   fields: [
     {
@@ -69,6 +77,15 @@ const config: AcademicPageConfig<AcademicSection> = {
       options: (choices) => choices.terms.map((term) => ({
         value: String(term.id),
         label: `${term.academic_year} — ${term.name}${term.status === 'archived' ? ' (archived)' : ''}`,
+      })),
+    },
+    {
+      name: 'major_id',
+      label: 'Major (optional)',
+      type: 'select',
+      options: (choices) => choices.majors.map((major) => ({
+        value: String(major.id),
+        label: `${major.code} — ${major.name}`,
       })),
     },
     { name: 'code', label: 'Section code', type: 'text', required: true, maxLength: 32 },
@@ -114,6 +131,10 @@ const config: AcademicPageConfig<AcademicSection> = {
           <p className="mt-1 text-xs">{section.academic_term.academic_year} · {section.academic_term.name}</p>
         </>
       ),
+    },
+    {
+      label: 'Major',
+      render: (section) => section.major ? `${section.major.code} — ${section.major.name}` : '—',
     },
     { label: 'Capacity', render: (section) => section.capacity ?? '—' },
     { label: 'Status', render: (section) => section.status },

@@ -3,14 +3,13 @@ import {
   BookOpen,
   BookOpenCheck,
   CalendarDays,
-  CalendarRange,
   ClipboardCheck,
   DoorOpen,
   GraduationCap,
   LayoutDashboard,
-  Layers,
   Library,
   Sparkles,
+  TrendingUp,
   TriangleAlert,
   Users,
   UsersRound,
@@ -48,14 +47,18 @@ const navigation: NavigationGroup[] = [
   {
     label: 'Academic',
     items: [
-      { label: 'Programs', to: '/academic', icon: BookOpen, end: true },
-      { label: 'Terms', to: '/academic/terms', icon: CalendarRange },
-      { label: 'Year levels', to: '/academic/year-levels', icon: Layers },
-      { label: 'Sections', to: '/academic/sections', icon: UsersRound },
+      { label: 'Academic structure', to: '/academic/structure', icon: BookOpen },
       { label: 'Subjects', to: '/subjects', icon: Library },
       { label: 'Offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
       { label: 'Faculty', to: '/faculty', icon: GraduationCap },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
+    ],
+  },
+  {
+    label: 'Progression',
+    items: [
+      { label: 'Major selections', to: '/academic/major-selections', icon: UsersRound },
+      { label: 'Promotions', to: '/academic/promotions', icon: TrendingUp },
     ],
   },
   {

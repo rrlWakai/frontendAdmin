@@ -389,11 +389,12 @@ export function StudentsPage() {
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[900px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Student</th>
                       <th className="px-4 py-3">Program</th>
+                      <th className="px-4 py-3">Placement</th>
                       <th className="px-4 py-3">Account status</th>
                       <th className="px-4 py-3">Profile status</th>
                       <th className="px-4 py-3 text-right">Actions</th>
@@ -413,6 +414,20 @@ export function StudentsPage() {
                               <p className="mt-1 text-xs">{student.program.name}</p>
                             </>
                           ) : '—'}
+                        </td>
+                        <td className="px-4 py-4 text-ink-muted">
+                          {student.current_placement ? (
+                            <>
+                              <p className="text-ink">
+                                {student.current_placement.year_level?.name ?? '—'}
+                                {student.current_placement.major ? ` · ${student.current_placement.major.code}` : ''}
+                              </p>
+                              <p className="mt-1 text-xs">
+                                {student.current_placement.academic_year?.label ?? 'No academic year'}
+                                {student.current_placement.section ? ` · ${student.current_placement.section.code}` : ' · No section'}
+                              </p>
+                            </>
+                          ) : 'No placement'}
                         </td>
                         <td className="px-4 py-4">
                           <Badge tone={accountStatusTone(student.account_status)}>{student.account_status}</Badge>

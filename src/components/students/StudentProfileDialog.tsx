@@ -164,6 +164,90 @@ export function StudentProfileDialog({
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+                    Academic structure
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold">Placement history</h3>
+                </div>
+                <p className="text-xs text-ink-muted">
+                  {student.placements.length} placement{student.placements.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {student.placements.length ? (
+                <div className="overflow-x-auto rounded-lg border border-line">
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                      <tr>
+                        <th className="px-4 py-3">Academic year / term</th>
+                        <th className="px-4 py-3">Year level</th>
+                        <th className="px-4 py-3">Major</th>
+                        <th className="px-4 py-3">Section</th>
+                        <th className="px-4 py-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {student.placements.map((placement) => (
+                        <tr key={placement.id}>
+                          <td className="px-4 py-3 text-ink-muted">
+                            <p className="text-ink">{placement.academic_year?.label ?? '—'}</p>
+                            <p className="mt-0.5 text-xs">{placement.academic_term?.name ?? '—'}</p>
+                          </td>
+                          <td className="px-4 py-3 text-ink-muted">{placement.year_level?.name ?? '—'}</td>
+                          <td className="px-4 py-3 text-ink-muted">
+                            {placement.major ? `${placement.major.code} · ${placement.major.name}` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-ink-muted">{placement.section?.code ?? 'Unassigned'}</td>
+                          <td className="px-4 py-3">
+                            <Badge tone={placement.is_current ? 'success' : 'neutral'}>
+                              {placement.is_current ? 'current' : placement.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-ink-muted">
+                  No academic placement is recorded for this student.
+                </p>
+              )}
+
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <h4 className="text-sm font-semibold text-ink">Major selections</h4>
+                <p className="text-xs text-ink-muted">
+                  {student.major_selections.length} record{student.major_selections.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {student.major_selections.length ? (
+                <ul className="mt-2 divide-y divide-line rounded-lg border border-line">
+                  {student.major_selections.map((selection) => (
+                    <li key={selection.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                      <div>
+                        <p className="text-ink">
+                          {selection.major ? `${selection.major.code} · ${selection.major.name}` : 'No major'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-ink-muted">
+                          {selection.academic_year?.label ?? 'Unknown academic year'}
+                          {selection.remarks ? ` · ${selection.remarks}` : ''}
+                        </p>
+                      </div>
+                      <Badge tone={selection.status === 'approved' ? 'success' : selection.status === 'rejected' ? 'danger' : 'neutral'}>
+                        {selection.status}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-ink-muted">
+                  No major selection is recorded for this student.
+                </p>
+              )}
+            </section>
+
+            <section>
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
                     Academic information
                   </p>
                   <h3 className="mt-1 text-lg font-semibold">Subject enrollments</h3>
