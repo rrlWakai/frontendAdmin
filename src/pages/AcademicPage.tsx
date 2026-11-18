@@ -1,6 +1,7 @@
 import { AcademicManagementPage } from '@/components/academic/AcademicManagementPage'
 import type { AcademicPageConfig } from '@/components/academic/AcademicManagementPage'
 import { AcademicStatusBadge } from '@/components/academic/AcademicStatusBadge'
+import { ProgressionOversight } from '@/components/academic/ProgressionOversight'
 import type { AcademicProgram } from '@/types/academic'
 
 const config: AcademicPageConfig<AcademicProgram> = {
@@ -39,5 +40,9 @@ const config: AcademicPageConfig<AcademicProgram> = {
 }
 
 export function AcademicPage() {
-  return <AcademicManagementPage config={config} />
+  return (
+    <AcademicManagementPage config={config}>
+      <ProgressionOversight />
+    </AcademicManagementPage>
+  )
 }

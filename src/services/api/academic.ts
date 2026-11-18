@@ -140,6 +140,17 @@ export async function reviewMajorSelection(
   return data.data.major_selection
 }
 
+export async function correctMajorSelection(
+  selectionId: number,
+  payload: { major_id: number; reason: string },
+): Promise<AcademicMajorSelection> {
+  const { data } = await apiClient.patch<
+    ApiSuccessResponse<{ major_selection: AcademicMajorSelection }>
+  >(`/academic/major-selections/${selectionId}/correct`, payload)
+
+  return data.data.major_selection
+}
+
 export async function fetchDuePromotions(): Promise<DuePromotion[]> {
   const { data } = await apiClient.get<ApiSuccessResponse<{ due_promotions: DuePromotion[] }>>(
     '/academic/promotions/due',

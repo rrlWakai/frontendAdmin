@@ -161,6 +161,7 @@ export interface PromotionRun {
   source_term_id: number
   target_term_id: number
   status: 'prepared' | 'allocated' | 'finalized'
+  prepared_by: number | null
   prepared_at: string | null
   finalized_at: string | null
   notes: string | null

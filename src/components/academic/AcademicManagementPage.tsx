@@ -319,10 +319,12 @@ function AcademicRecordDialog<T extends AcademicRecord>({
 
 interface AcademicManagementPageProps<T extends AcademicRecord> {
   config: AcademicPageConfig<T>
+  children?: ReactNode
 }
 
 export function AcademicManagementPage<T extends AcademicRecord>({
   config,
+  children,
 }: AcademicManagementPageProps<T>) {
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
@@ -635,6 +637,8 @@ export function AcademicManagementPage<T extends AcademicRecord>({
           )}
         </CardBody>
       </Card>
+
+      {children}
 
       {dialogRecord !== undefined && options ? (
         <AcademicRecordDialog

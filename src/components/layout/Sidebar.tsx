@@ -10,10 +10,8 @@ import {
   LayoutDashboard,
   Library,
   Sparkles,
-  TrendingUp,
   TriangleAlert,
   Users,
-  UsersRound,
   UserRound,
   X,
 } from 'lucide-react'
@@ -94,13 +92,6 @@ const navigation: NavigationGroup[] = [
       { label: 'Offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
       { label: 'Faculty', to: '/faculty', icon: GraduationCap },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
-    ],
-  },
-  {
-    label: 'Progression',
-    items: [
-      { label: 'Major selections', to: '/academic/major-selections', icon: UsersRound },
-      { label: 'Promotions', to: '/academic/promotions', icon: TrendingUp },
     ],
   },
   {
