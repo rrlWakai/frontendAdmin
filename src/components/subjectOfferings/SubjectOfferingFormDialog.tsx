@@ -7,24 +7,18 @@ import type {
   SubjectOffering,
   SubjectOfferingInput,
   SubjectOfferingOptions,
-  SubjectOfferingProfessor,
   SubjectOfferingSubject,
   SubjectOfferingUpdateInput,
   SubjectOfferingYearLevel,
 } from '@/types/subjectOffering'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
-export interface SubjectOfferingFormSubmission {
-  payload: SubjectOfferingInput | SubjectOfferingUpdateInput
-  professor_id: number | null
-}
-
 interface SubjectOfferingFormDialogProps {
   offering: SubjectOffering | null
   options: SubjectOfferingOptions
   termId: number
   onCancel: () => void
-  onSubmit: (submission: SubjectOfferingFormSubmission) => Promise<void>
+  onSubmit: (payload: SubjectOfferingInput | SubjectOfferingUpdateInput) => Promise<void>
 }
 
 interface SubjectOfferingFormValues {
@@ -33,14 +27,9 @@ interface SubjectOfferingFormValues {
   section_id: string
   subject_id: string
   expected_students: string
-  professor_id: string
 }
 
-const selectClass = 'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-ink-muted'
-
-function isProfessorActive(professor: SubjectOfferingProfessor): boolean {
-  return professor.status === 'active' && professor.user?.status === 'active'
-}
+const selectClass = 'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-ink-muted'
 
 export function SubjectOfferingFormDialog({
   offering,
@@ -51,13 +40,6 @@ export function SubjectOfferingFormDialog({
 }: SubjectOfferingFormDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const structuralLocked = offering !== null && offering.status !== 'draft'
-  const activeAssignments = offering?.faculty_assignments?.filter((assignment) => assignment.status === 'active') ?? []
-  const currentProfessorId = activeAssignments[0]?.professor.id
-  const currentProfessorIds = new Set(activeAssignments.map((assignment) => assignment.professor.id))
-  const selectableProfessors = options.professors.filter((professor) => (
-    isProfessorActive(professor) || currentProfessorIds.has(professor.id)
-  ))
-  const currentProfessor = options.professors.find((professor) => professor.id === currentProfessorId)
   const [values, setValues] = useState<SubjectOfferingFormValues>(() => ({
     program_id: offering ? String(offering.section.program_id) : '',
     year_level_id: offering ? String(offering.section.year_level_id) : '',
@@ -66,7 +48,6 @@ export function SubjectOfferingFormDialog({
     expected_students: offering?.expected_students === null || offering?.expected_students === undefined
       ? ''
       : String(offering.expected_students),
-    professor_id: currentProfessorId ? String(currentProfessorId) : '',
   }))
   const [curriculumSubjects, setCurriculumSubjects] = useState<SubjectOfferingSubject[]>([])
   const [isCurriculumLoading, setIsCurriculumLoading] = useState(Boolean(offering))
@@ -123,21 +104,6 @@ export function SubjectOfferingFormDialog({
     && offering.subject?.id === offering.subject_id
     && Number(values.subject_id) === offering.subject_id,
   )
-  const currentProfessorInactive = Boolean(
-    currentProfessor
-    && currentProfessorId !== undefined
-    && values.professor_id === String(currentProfessorId)
-    && !isProfessorActive(currentProfessor),
-  )
-  const termSupportsFaculty = term?.status === 'active' || term?.status === 'planned'
-  const publishedSchedules = offering?.published_schedules_count ?? 0
-  const professorLockedBySchedules = Boolean(offering && publishedSchedules > 0 && currentProfessorId)
-  const professorLocked = Boolean(
-    !termSupportsFaculty
-    || selectableProfessors.length === 0
-    || professorLockedBySchedules,
-  )
-  const hasMultipleAssignments = activeAssignments.length > 1
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -285,10 +251,7 @@ export function SubjectOfferingFormDialog({
             expected_students: expectedStudents,
           }
 
-      await onSubmit({
-        payload,
-        professor_id: values.professor_id ? Number(values.professor_id) : null,
-      })
+      await onSubmit(payload)
     } catch (failure) {
       const errors = getApiFieldErrors(failure)
       setFieldErrors(errors)
@@ -308,13 +271,13 @@ export function SubjectOfferingFormDialog({
         event.preventDefault()
         onCancel()
       }}
-      className="fixed inset-0 m-auto max-h-[92vh] w-[min(46rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-brand-950/45"
+      className="fixed inset-0 m-auto max-h-[92vh] w-[min(46rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/45"
       aria-labelledby="subject-offering-form-title"
     >
       <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5 p-5 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
               Class assignments
             </p>
             <h2 id="subject-offering-form-title" className="mt-1 text-xl font-semibold">
@@ -322,8 +285,8 @@ export function SubjectOfferingFormDialog({
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               {offering
-                ? 'Update the class details and professor assignment without changing linked records.'
-                : 'Select a curriculum-eligible subject, then assign a professor or save the class as incomplete.'}
+                ? 'Update the class details without changing linked records or professor assignments.'
+                : 'Add an exceptional class manually. Assign its professor from the class assignment list.'}
             </p>
           </div>
           <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
@@ -339,7 +302,7 @@ export function SubjectOfferingFormDialog({
 
         {structuralLocked ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Class structure is locked while the assignment is {offering?.status}. Only expected students and the professor assignment can be changed.
+            Class structure is locked while the assignment is {offering?.status}. Only expected students can be changed.
           </div>
         ) : null}
 
@@ -489,57 +452,6 @@ export function SubjectOfferingFormDialog({
             ) : (
               <p className="text-xs text-ink-muted">
                 Eligible subjects come from {selectedProgram?.code ?? 'the program'} · {selectedYearLevel?.name ?? 'this year level'} · {term?.term ?? 'this semester'}.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="offering-professor" className="block text-sm font-medium text-ink">
-              Professor <span className="font-normal text-ink-muted">(optional)</span>
-            </label>
-            <select
-              id="offering-professor"
-              disabled={professorLocked}
-              value={values.professor_id}
-              onChange={(event) => update('professor_id', event.target.value)}
-              className={selectClass}
-            >
-              <option value="">Unassigned</option>
-              {selectableProfessors.map((professor) => {
-                const professorActive = isProfessorActive(professor)
-
-                return (
-                  <option key={professor.id} value={professor.id} disabled={!professorActive}>
-                    {professor.user?.name ?? professor.employee_number}
-                    {professor.user?.name ? ` (${professor.employee_number})` : ''}
-                    {!professorActive ? ' (inactive)' : ''}
-                  </option>
-                )
-              })}
-            </select>
-            {!termSupportsFaculty ? (
-              <p className="text-xs text-amber-700">
-                Professor assignment requires an active or planned term. Save this class as incomplete and assign later.
-              </p>
-            ) : professorLockedBySchedules ? (
-              <p className="text-xs text-ink-muted">
-                The professor is locked because published schedules exist for this class assignment.
-              </p>
-            ) : selectableProfessors.length === 0 ? (
-              <p className="text-xs text-amber-700">
-                No active professors are available. Save this class as incomplete and assign later.
-              </p>
-            ) : currentProfessorInactive ? (
-              <p className="text-xs font-medium text-amber-700">
-                The currently assigned professor is inactive. The assignment is preserved unless you choose another active professor.
-              </p>
-            ) : hasMultipleAssignments ? (
-              <p className="text-xs font-medium text-amber-700">
-                Multiple active professors are linked. Choose one to replace the current assignments.
-              </p>
-            ) : (
-              <p className="text-xs text-ink-muted">
-                Leave blank to save as incomplete. Selecting a professor opens the class assignment and assigns them.
               </p>
             )}
           </div>

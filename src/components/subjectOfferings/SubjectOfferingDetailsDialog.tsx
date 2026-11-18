@@ -56,13 +56,13 @@ export function SubjectOfferingDetailsDialog({
         event.preventDefault()
         onClose()
       }}
-      className="fixed inset-0 m-auto max-h-[92vh] w-[min(64rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-brand-950/45"
+      className="fixed inset-0 m-auto max-h-[92vh] w-[min(64rem,calc(100%-2rem))] overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/45"
       aria-labelledby="subject-offering-details-title"
     >
       <div className="space-y-6 p-5 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
               Class assignment
             </p>
             <h2 id="subject-offering-details-title" className="mt-1 text-xl font-semibold">
@@ -160,7 +160,7 @@ export function SubjectOfferingDetailsDialog({
 
             <section>
               <div className="mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
                   Teaching
                 </p>
                 <h3 className="mt-1 text-lg font-semibold">Professor assignments</h3>
@@ -205,7 +205,7 @@ export function SubjectOfferingDetailsDialog({
 
             <section>
               <div className="mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
                   Scheduling
                 </p>
                 <h3 className="mt-1 text-lg font-semibold">Class schedules</h3>

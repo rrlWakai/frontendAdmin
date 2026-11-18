@@ -152,6 +152,59 @@ export interface SubjectOfferingSummary {
   incomplete: number
 }
 
+export type SubjectOfferingPreparationSeverity = 'blocking' | 'warning'
+
+export interface SubjectOfferingPreparationDiagnostic {
+  code: string
+  message: string
+  severity: SubjectOfferingPreparationSeverity
+  section_id: number | null
+  section_code: string | null
+  program_code: string | null
+  year_level: number | null
+  major_code: string | null
+}
+
+export interface SubjectOfferingPreparationClass {
+  section_id: number
+  section_code: string
+  program_id: number
+  program_code: string
+  year_level_id: number
+  year_level: number
+  major_id: number | null
+  major_code: string | null
+  subject_id: number
+  subject_code: string
+  subject_title: string
+  exists: boolean
+  offering_id: number | null
+  offering_status: SubjectOfferingStatus | null
+}
+
+export interface SubjectOfferingPreparationSummary {
+  required: number
+  existing: number
+  missing: number
+  sections: number
+  sections_with_issues: number
+  issues: number
+  warnings: number
+}
+
+export interface SubjectOfferingPreparationPlan {
+  academic_term: SubjectOfferingTerm
+  summary: SubjectOfferingPreparationSummary
+  classes: SubjectOfferingPreparationClass[]
+  issues: SubjectOfferingPreparationDiagnostic[]
+  warnings: SubjectOfferingPreparationDiagnostic[]
+}
+
+export interface SubjectOfferingPreparationResult {
+  created_count: number
+  preparation: SubjectOfferingPreparationPlan
+}
+
 export interface CurriculumSubjectFilters {
   program_id: number
   year_level_id: number

@@ -7,6 +7,8 @@ import type {
   SubjectOfferingInput,
   SubjectOfferingOptions,
   SubjectOfferingPagination,
+  SubjectOfferingPreparationPlan,
+  SubjectOfferingPreparationResult,
   SubjectOfferingStatus,
   SubjectOfferingSubject,
   SubjectOfferingSummary,
@@ -42,6 +44,28 @@ export async function fetchSubjectOffering(id: number): Promise<SubjectOfferingD
 export async function fetchSubjectOfferingOptions(): Promise<SubjectOfferingOptions> {
   const { data } = await apiClient.get<ApiSuccessResponse<SubjectOfferingOptions>>(
     '/academic/subject-offerings/options',
+  )
+
+  return data.data
+}
+
+export async function fetchSubjectOfferingPreparationPlan(
+  termId: number,
+): Promise<SubjectOfferingPreparationPlan> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ preparation: SubjectOfferingPreparationPlan }>>(
+    '/academic/subject-offerings/preparation-plan',
+    { params: { academic_term_id: termId } },
+  )
+
+  return data.data.preparation
+}
+
+export async function prepareSubjectOfferingClasses(
+  termId: number,
+): Promise<SubjectOfferingPreparationResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SubjectOfferingPreparationResult>>(
+    '/academic/subject-offerings/prepare',
+    { academic_term_id: termId },
   )
 
   return data.data

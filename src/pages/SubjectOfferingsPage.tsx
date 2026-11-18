@@ -8,10 +8,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { TextField } from '@/components/common/TextField'
 import { SubjectOfferingDetailsDialog } from '@/components/subjectOfferings/SubjectOfferingDetailsDialog'
-import {
-  SubjectOfferingFormDialog,
-  type SubjectOfferingFormSubmission,
-} from '@/components/subjectOfferings/SubjectOfferingFormDialog'
+import { SubjectOfferingFormDialog } from '@/components/subjectOfferings/SubjectOfferingFormDialog'
+import { SubjectOfferingPreparationPanel } from '@/components/subjectOfferings/SubjectOfferingPreparationPanel'
+import { SubjectOfferingProfessorDialog } from '@/components/subjectOfferings/SubjectOfferingProfessorDialog'
 import { SubjectOfferingStatusBadge } from '@/components/subjectOfferings/SubjectOfferingStatusBadge'
 import { useAuth } from '@/hooks/useAuth'
 import {
@@ -23,7 +22,9 @@ import {
   createSubjectOffering,
   fetchSubjectOffering,
   fetchSubjectOfferingOptions,
+  fetchSubjectOfferingPreparationPlan,
   fetchSubjectOfferings,
+  prepareSubjectOfferingClasses,
   updateSubjectOffering,
   updateSubjectOfferingStatus,
 } from '@/services/api/subjectOfferings'
@@ -35,7 +36,9 @@ import type {
   SubjectOfferingInput,
   SubjectOfferingOptions,
   SubjectOfferingPagination,
+  SubjectOfferingPreparationPlan,
   SubjectOfferingSummary,
+  SubjectOfferingUpdateInput,
   SubjectOfferingYearLevel,
 } from '@/types/subjectOffering'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
@@ -63,7 +66,7 @@ const emptyPagination: SubjectOfferingPagination = {
   total: 0,
 }
 
-const selectClass = 'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20'
+const selectClass = 'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20'
 
 function canEditOffering(offering: SubjectOffering): boolean {
   return offering.status === 'draft' || offering.status === 'open'
@@ -113,6 +116,7 @@ export function SubjectOfferingsPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [dialogOffering, setDialogOffering] = useState<SubjectOffering | null | undefined>(undefined)
+  const [professorOffering, setProfessorOffering] = useState<SubjectOffering | null>(null)
   const [selectedOfferingId, setSelectedOfferingId] = useState<number | null>(null)
   const [detailsOffering, setDetailsOffering] = useState<SubjectOfferingDetail | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -124,6 +128,11 @@ export function SubjectOfferingsPage() {
   const [readinessError, setReadinessError] = useState<string | null>(null)
   const [isReadinessLoading, setIsReadinessLoading] = useState(false)
   const [readinessVersion, setReadinessVersion] = useState(0)
+  const [preparation, setPreparation] = useState<SubjectOfferingPreparationPlan | null>(null)
+  const [preparationError, setPreparationError] = useState<string | null>(null)
+  const [isPreparationLoading, setIsPreparationLoading] = useState(false)
+  const [isPreparing, setIsPreparing] = useState(false)
+  const [preparationVersion, setPreparationVersion] = useState(0)
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string
     description?: string
@@ -138,6 +147,7 @@ export function SubjectOfferingsPage() {
     && Boolean(selectedTerm)
     && selectedTerm?.status !== 'archived'
     && !isOptionsLoading
+  const canPrepare = canCreate
 
   useEffect(() => {
     let active = true
@@ -246,6 +256,35 @@ export function SubjectOfferingsPage() {
   }, [readinessVersion, termFilter])
 
   useEffect(() => {
+    if (!termFilter) {
+      setPreparation(null)
+      setPreparationError(null)
+      setIsPreparationLoading(false)
+      return
+    }
+
+    let active = true
+    void Promise.resolve().then(async () => {
+      setIsPreparationLoading(true)
+      setPreparationError(null)
+      try {
+        const result = await fetchSubjectOfferingPreparationPlan(Number(termFilter))
+        if (active) setPreparation(result)
+      } catch (failure) {
+        if (active) {
+          setPreparation(null)
+          setPreparationError(getApiErrorMessage(failure, 'Unable to load the class preparation plan.'))
+        }
+      } finally {
+        if (active) setIsPreparationLoading(false)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [preparationVersion, termFilter])
+
+  useEffect(() => {
     if (selectedOfferingId === null) return
 
     let active = true
@@ -312,7 +351,7 @@ export function SubjectOfferingsPage() {
       ))
 
     if (assignmentCount === 0) {
-      return { label: 'Missing professor', tone: 'warning' }
+      return { label: 'Not assigned', tone: 'warning' }
     }
 
     if (assignmentCount > 1) {
@@ -332,7 +371,7 @@ export function SubjectOfferingsPage() {
     }
 
     if ((offering.published_schedules_count ?? 0) > 0) {
-      return { label: 'Scheduled', tone: 'success' }
+      return { label: 'Scheduled', tone: 'success', title: 'Already scheduled.' }
     }
 
     if (offering.status === 'closed') {
@@ -340,7 +379,7 @@ export function SubjectOfferingsPage() {
     }
 
     if (offering.status === 'draft') {
-      return { label: 'Draft', tone: 'neutral' }
+      return { label: 'Prepared', tone: 'neutral', title: 'Prepared. Assign a professor to make it schedulable.' }
     }
 
     if (isReadinessLoading) {
@@ -360,7 +399,7 @@ export function SubjectOfferingsPage() {
       ?? 0
 
     if (assignmentCount === 0) {
-      return { label: 'Incomplete', tone: 'warning', title: 'Assign a professor before scheduling.' }
+      return { label: 'Not ready', tone: 'warning', title: 'Assign a professor before scheduling.' }
     }
 
     const blockingIssues = offeringIssues(offering)
@@ -374,7 +413,7 @@ export function SubjectOfferingsPage() {
       }
     }
 
-    return { label: 'Ready', tone: 'success' }
+    return { label: 'Ready', tone: 'success', title: 'Ready for Intelligent Scheduling.' }
   }
 
   function professorLabel(offering: SubjectOffering): string | null {
@@ -429,100 +468,143 @@ export function SubjectOfferingsPage() {
     setReadinessError(null)
     setIsLoading(true)
     setIsReadinessLoading(true)
+    setPreparation(null)
+    setPreparationError(null)
+    setIsPreparationLoading(true)
+    setProfessorOffering(null)
+    setDialogOffering(undefined)
     setError(null)
     setSuccess(null)
     setWarning(null)
   }
 
-  async function handleSave({ payload, professor_id }: SubjectOfferingFormSubmission) {
-    if (dialogOffering) {
-      const activeAssignments = dialogOffering.faculty_assignments
-        ?.filter((assignment) => assignment.status === 'active') ?? []
-      const currentProfessorId = activeAssignments[0]?.professor.id ?? null
-      const shouldSyncAssignments = professor_id !== currentProfessorId || activeAssignments.length > 1
-      const saved = await updateSubjectOffering(dialogOffering.id, payload)
-      let working = saved
-      let assignmentWarning: string | null = null
+  async function handlePrepareClasses() {
+    if (!termFilter || !canPrepare) return
 
-      if (shouldSyncAssignments) {
-        try {
-          if (activeAssignments.length > 0) {
-            await Promise.all(
-              activeAssignments.map((assignment) => updateFacultyAssignmentStatus(assignment.id, 'cancelled')),
-            )
-          }
+    setIsPreparing(true)
+    setError(null)
+    setSuccess(null)
+    setWarning(null)
+    setPreparationError(null)
 
-          if (professor_id !== null) {
-            if (working.status !== 'open') {
-              working = await updateSubjectOfferingStatus(working.id, 'open')
-            }
+    try {
+      const result = await prepareSubjectOfferingClasses(Number(termFilter))
+      setPreparation(result.preparation)
+      setPage(1)
+      setRefreshVersion((version) => version + 1)
+      setReadinessVersion((version) => version + 1)
 
-            await createFacultyAssignment({
-              professor_id,
-              subject_offering_id: working.id,
-              assignment_role: 'lead',
-            })
-          }
-        } catch (failure) {
-          assignmentWarning = `Class details were saved, but the professor assignment could not be updated: ${getApiErrorMessage(failure, 'Unknown error.')}`
-        }
+      const remainingIssues = result.preparation.summary.issues
+      const issueSuffix = remainingIssues > 0
+        ? ` ${remainingIssues} preparation note${remainingIssues === 1 ? '' : 's'} still need review.`
+        : ''
+
+      if (result.created_count > 0) {
+        setSuccess(
+          `${result.created_count} required class${result.created_count === 1 ? '' : 'es'} prepared from the curriculum.${issueSuffix}`,
+        )
+      } else if (result.preparation.summary.missing > 0) {
+        setSuccess(
+          `No new classes were created. ${result.preparation.summary.missing} required class${result.preparation.summary.missing === 1 ? '' : 'es'} still need configuration review.`,
+        )
+      } else {
+        setSuccess(`All required classes were already prepared.${issueSuffix}`)
       }
+    } catch (failure) {
+      const fieldMessage = Object.values(getApiFieldErrors(failure)).flat()[0]
+      setPreparationError(
+        fieldMessage ?? getApiErrorMessage(failure, 'Unable to prepare the required class assignments.'),
+      )
+    } finally {
+      setIsPreparing(false)
+    }
+  }
+
+  async function handleAssignProfessor(professorId: number | null) {
+    const offering = professorOffering
+    if (!offering) return
+
+    const activeAssignments = offering.faculty_assignments
+      ?.filter((assignment) => assignment.status === 'active') ?? []
+    const currentProfessorId = activeAssignments[0]?.professor.id ?? null
+    const shouldSyncAssignments = professorId !== currentProfessorId || activeAssignments.length > 1
+
+    if (!shouldSyncAssignments) {
+      setProfessorOffering(null)
+      return
+    }
+
+    try {
+      let working = offering
+
+      if (professorId !== null && working.status !== 'open') {
+        working = await updateSubjectOfferingStatus(working.id, 'open')
+      }
+
+      if (activeAssignments.length > 0) {
+        await Promise.all(
+          activeAssignments.map((assignment) => updateFacultyAssignmentStatus(assignment.id, 'cancelled')),
+        )
+      }
+
+      if (professorId !== null) {
+        await createFacultyAssignment({
+          professor_id: professorId,
+          subject_offering_id: working.id,
+          assignment_role: 'lead',
+        })
+      }
+
+      const professorName = professorId !== null
+        ? options.professors.find((professor) => professor.id === professorId)?.user?.name
+        : null
+
+      setProfessorOffering(null)
+      setRefreshVersion((version) => version + 1)
+      setReadinessVersion((version) => version + 1)
+      if (selectedOfferingId !== null) refreshDetails()
+      setWarning(null)
+      setSuccess(
+        professorId !== null
+          ? `${professorName ?? 'Professor'} assigned to ${offering.subject.code} - ${offering.section.code}.`
+          : `Professor assignment removed from ${offering.subject.code} - ${offering.section.code}.`,
+      )
+    } catch (failure) {
+      setProfessorOffering(null)
+      setRefreshVersion((version) => version + 1)
+      setReadinessVersion((version) => version + 1)
+      if (selectedOfferingId === offering.id) refreshDetails()
+      setSuccess(null)
+      setWarning(
+        `Professor assignment could not be updated: ${getApiErrorMessage(failure, 'Unknown error.')}`,
+      )
+    }
+  }
+
+  async function handleSave(payload: SubjectOfferingInput | SubjectOfferingUpdateInput) {
+    if (dialogOffering) {
+      await updateSubjectOffering(dialogOffering.id, payload)
 
       setDialogOffering(undefined)
       setRefreshVersion((version) => version + 1)
       setReadinessVersion((version) => version + 1)
+      setPreparationVersion((version) => version + 1)
       if (selectedOfferingId !== null) refreshDetails()
-
-      if (assignmentWarning) {
-        setSuccess(null)
-        setWarning(assignmentWarning)
-      } else {
-        setWarning(null)
-        setSuccess(
-          professor_id !== null
-            ? 'Class assignment changes saved and professor assigned.'
-            : 'Class assignment changes saved.',
-        )
-      }
+      setWarning(null)
+      setSuccess('Class assignment changes saved.')
       return
     }
 
-    let created = await createSubjectOffering(payload as SubjectOfferingInput)
-    let assignmentWarning: string | null = null
-
-    if (professor_id !== null) {
-      try {
-        if (created.status !== 'open') {
-          created = await updateSubjectOfferingStatus(created.id, 'open')
-        }
-
-        await createFacultyAssignment({
-          professor_id,
-          subject_offering_id: created.id,
-          assignment_role: 'lead',
-        })
-      } catch (failure) {
-        assignmentWarning = `Class assignment was created, but the professor could not be assigned: ${getApiErrorMessage(failure, 'Unknown error.')}`
-      }
-    }
+    await createSubjectOffering(payload as SubjectOfferingInput)
 
     setDialogOffering(undefined)
     setPage(1)
     setRefreshVersion((version) => version + 1)
     setReadinessVersion((version) => version + 1)
+    setPreparationVersion((version) => version + 1)
     if (selectedOfferingId !== null) refreshDetails()
-
-    if (assignmentWarning) {
-      setSuccess(null)
-      setWarning(assignmentWarning)
-    } else {
-      setWarning(null)
-      setSuccess(
-        professor_id !== null
-          ? 'Class assignment created and professor assigned.'
-          : 'Class assignment created as incomplete.',
-      )
-    }
+    setWarning(null)
+    setSuccess('Class assignment created. Assign a professor when ready.')
   }
 
   function requestStatusChange(offering: SubjectOffering) {
@@ -580,7 +662,7 @@ export function SubjectOfferingsPage() {
       <PageHeader
         eyebrow="Academic structure"
         title="Class assignments"
-        description="Create term-based classes, assign professors, and prepare each class for intelligent scheduling."
+        description="Prepare required classes from the curriculum, assign professors, and hand validated offerings to Intelligent Scheduling."
         actions={canManage ? (
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
             <div className="space-y-1">
@@ -592,7 +674,7 @@ export function SubjectOfferingsPage() {
                 value={termFilter}
                 disabled={isOptionsLoading || options.terms.length === 0}
                 onChange={(event) => changeTerm(event.target.value)}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 sm:w-56"
+                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/20 sm:w-56"
               >
                 {options.terms.map((term) => (
                   <option key={term.id} value={term.id}>
@@ -604,11 +686,15 @@ export function SubjectOfferingsPage() {
               </select>
             </div>
             <Button
+              variant="outline"
               leftIcon={<Plus className="size-4" aria-hidden="true" />}
               disabled={!canCreate}
-              onClick={() => setDialogOffering(null)}
+              onClick={() => {
+                setProfessorOffering(null)
+                setDialogOffering(null)
+              }}
             >
-              Create class assignment
+              Add manually
             </Button>
           </div>
         ) : null}
@@ -646,18 +732,32 @@ export function SubjectOfferingsPage() {
 
       <Card>
         <CardBody>
-          <div className="grid grid-cols-1 divide-y divide-line rounded-lg border border-line bg-surface-soft/60 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <SubjectOfferingPreparationPanel
+            plan={preparation}
+            isLoading={isPreparationLoading}
+            error={preparationError}
+            isPreparing={isPreparing}
+            canPrepare={canPrepare}
+            onPrepare={() => void handlePrepareClasses()}
+            onRetry={() => setPreparationVersion((version) => version + 1)}
+          />
+
+          <div className="mt-5 grid grid-cols-2 divide-line rounded-lg border border-line bg-surface-soft/60 lg:grid-cols-4 lg:divide-x">
             <div className="p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Total classes</p>
-              <p className="mt-1 text-2xl font-semibold text-ink">{summary?.total ?? '—'}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Required classes</p>
+              <p className="mt-1 text-2xl font-semibold text-ink">{preparation?.summary.required ?? '—'}</p>
             </div>
-            <div className="p-4">
+            <div className="border-t border-line p-4 lg:border-t-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Prepared</p>
+              <p className="mt-1 text-2xl font-semibold text-maroon-700">{preparation?.summary.existing ?? '—'}</p>
+            </div>
+            <div className="border-t border-line p-4 lg:border-t-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Assigned</p>
               <p className="mt-1 text-2xl font-semibold text-emerald-700">{summary?.assigned ?? '—'}</p>
             </div>
-            <div className="p-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Incomplete</p>
-              <p className="mt-1 text-2xl font-semibold text-amber-700">{summary?.incomplete ?? '—'}</p>
+            <div className="border-t border-line p-4 lg:border-t-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">To prepare</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-700">{preparation?.summary.missing ?? '—'}</p>
             </div>
           </div>
 
@@ -798,7 +898,7 @@ export function SubjectOfferingsPage() {
                 >
                   <option value="">All assignments</option>
                   <option value="assigned">Assigned</option>
-                  <option value="incomplete">Incomplete</option>
+                  <option value="incomplete">Not assigned</option>
                 </select>
               </div>
             </div>
@@ -838,19 +938,37 @@ export function SubjectOfferingsPage() {
             <div className="mt-5">
               <EmptyState
                 icon={BookOpenCheck}
-                title={hasFilters ? 'No class assignments match' : 'No class assignments for this term'}
+                title={hasFilters
+                  ? 'No class assignments match'
+                  : preparation && preparation.summary.missing > 0
+                    ? 'Required classes are not prepared yet'
+                    : 'No class assignments for this term'}
                 description={hasFilters
                   ? 'Try adjusting the search or filters.'
-                  : 'Create the first class assignment for this term, then assign a professor or save it as incomplete.'}
-                action={canCreate && !hasFilters ? (
-                  <Button onClick={() => setDialogOffering(null)}>Create class assignment</Button>
+                  : preparation && preparation.summary.missing > 0
+                    ? 'Prepare classes from the curriculum, then assign professors to make them ready for scheduling.'
+                    : 'Review the active sections and curriculum, or add an exceptional class manually.'}
+                action={!hasFilters && preparation && preparation.summary.missing > 0 && canPrepare ? (
+                  <Button isLoading={isPreparing} onClick={() => void handlePrepareClasses()}>
+                    Prepare {preparation.summary.missing} class{preparation.summary.missing === 1 ? '' : 'es'}
+                  </Button>
+                ) : canCreate && !hasFilters ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setProfessorOffering(null)
+                      setDialogOffering(null)
+                    }}
+                  >
+                    Add class manually
+                  </Button>
                 ) : null}
               />
             </div>
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[980px] text-left text-sm">
+                <table className="w-full min-w-[1120px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Class</th>
@@ -909,12 +1027,31 @@ export function SubjectOfferingsPage() {
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex justify-end gap-2">
+                              {canManage && canEditOffering(offering) ? (
+                                <Button
+                                  size="sm"
+                                  variant={professor ? 'outline' : 'secondary'}
+                                  onClick={() => {
+                                    setDialogOffering(undefined)
+                                    setProfessorOffering(offering)
+                                  }}
+                                >
+                                  {professor ? 'Change professor' : 'Assign professor'}
+                                </Button>
+                              ) : null}
                               <Button size="sm" variant="outline" onClick={() => openDetails(offering)}>
                                 View
                               </Button>
                               {canManage && canEditOffering(offering) ? (
-                                <Button size="sm" variant="outline" onClick={() => setDialogOffering(offering)}>
-                                  Edit
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setProfessorOffering(null)
+                                    setDialogOffering(offering)
+                                  }}
+                                >
+                                  Edit details
                                 </Button>
                               ) : null}
                               {canManage && nextStatus(offering) ? (
@@ -976,6 +1113,16 @@ export function SubjectOfferingsPage() {
           termId={dialogOffering?.academic_term_id ?? Number(termFilter)}
           onCancel={() => setDialogOffering(undefined)}
           onSubmit={handleSave}
+        />
+      ) : null}
+
+      {professorOffering ? (
+        <SubjectOfferingProfessorDialog
+          key={professorOffering.id}
+          offering={professorOffering}
+          options={options}
+          onCancel={() => setProfessorOffering(null)}
+          onSubmit={handleAssignProfessor}
         />
       ) : null}
 
