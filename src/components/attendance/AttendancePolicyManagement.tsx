@@ -179,13 +179,29 @@ export function AttendancePolicyManagement() {
               <ul className="mt-2 divide-y divide-line">
                 {policies.map((policy) => {
                   const offering = offerings.find((item) => item.id === policy.subject_offering_id)
+                  const policyOffering = policy.subject_offering
+                  const offeringLabel = policyOffering
+                    ? [policyOffering.subject?.code, policyOffering.section?.code].filter(Boolean).join(' · ')
+                    : offering
+                      ? `${offering.subject.code} · ${offering.section.code}`
+                      : null
+                  const isOfferingPolicy = policy.subject_offering_id !== null
+
                   return (
                     <li key={policy.id} className="flex items-start justify-between gap-3 py-3 text-sm">
                       <span className="text-ink">
-                        {offering ? `${offering.subject.code} · ${offering.section.code}` : 'Institutional default'}
+                        {offeringLabel ?? 'Institutional default'}
+                        <span className="mt-0.5 block text-xs text-ink-muted">
+                          {isOfferingPolicy ? 'Offering override' : 'Institutional fallback'}
+                        </span>
                       </span>
                       <span className="shrink-0 text-right text-ink-muted">
-                        {policy.allowed_absences} absences · effective {new Date(policy.effective_at).toLocaleDateString()}
+                        <span className="block">
+                          {policy.allowed_absences} absences · effective {new Date(policy.effective_at).toLocaleDateString()}
+                        </span>
+                        <span className="mt-0.5 block text-xs">
+                          {policy.created_by?.name ? `Set by ${policy.created_by.name}` : 'System record'}
+                        </span>
                       </span>
                     </li>
                   )

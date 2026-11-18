@@ -175,10 +175,6 @@ export function DashboardPage() {
               <Link to="/scheduling" className="text-sm font-medium text-maroon-700 hover:text-maroon-800">
                 Go to Intelligent Scheduling <ArrowRight className="inline size-3.5" aria-hidden="true" />
               </Link>
-              <span className="text-ink-muted">·</span>
-              <Link to="/student-schedule-conflicts" className="text-sm font-medium text-maroon-700 hover:text-maroon-800">
-                Review conflicts
-              </Link>
             </div>
           </div>
 

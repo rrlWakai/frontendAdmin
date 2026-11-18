@@ -6,6 +6,7 @@ import type {
   AttendanceRecordItem,
   AttendanceSession,
   AttendanceSessionDetail,
+  AttendanceSessionSummary,
   AttendanceSummary,
   AttendanceStatus,
 } from '@/types/attendance'
@@ -17,6 +18,12 @@ export interface AttendancePolicy {
   subject_offering_id: number | null
   allowed_absences: number
   effective_at: string
+  created_by?: { id: number; name: string } | null
+  subject_offering?: {
+    id: number
+    subject?: { code: string; title: string }
+    section?: { code: string; name: string | null }
+  } | null
 }
 
 export async function fetchAttendancePolicies(academicTermId?: number): Promise<AttendancePolicy[]> {
@@ -46,9 +53,17 @@ export async function fetchAttendanceOptions(): Promise<AttendanceOptions> {
 
 export async function fetchAttendanceSessions(
   filters: AttendanceFilters,
-): Promise<{ sessions: AttendanceSession[]; pagination: AttendancePagination }> {
+): Promise<{
+  sessions: AttendanceSession[]
+  pagination: AttendancePagination
+  summary: AttendanceSessionSummary
+}> {
   const { data } = await apiClient.get<
-    ApiSuccessResponse<{ sessions: AttendanceSession[]; pagination: AttendancePagination }>
+    ApiSuccessResponse<{
+      sessions: AttendanceSession[]
+      pagination: AttendancePagination
+      summary: AttendanceSessionSummary
+    }>
   >('/attendance/sessions', { params: filters })
   return data.data
 }

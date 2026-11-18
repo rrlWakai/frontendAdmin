@@ -18,9 +18,11 @@ import type {
   AttendanceOptions,
   AttendanceRecordItem,
   AttendanceSession,
+  AttendanceSessionSummary,
   AttendanceSummary,
 } from '@/types/attendance'
 import { getApiErrorMessage } from '@/utils/apiError'
+import { attendanceSessionLifecycle } from '@/utils/attendance'
 
 type ViewMode = 'sessions' | 'records'
 
@@ -32,6 +34,27 @@ const emptySummary: AttendanceSummary = {
   total: 0,
 }
 
+const emptySessionSummary: AttendanceSessionSummary = {
+  held: 0,
+  not_started: 0,
+  unfinalized: 0,
+  finalized: 0,
+  cancelled: 0,
+}
+
+const sessionStatusLabels: Record<string, string> = {
+  open: 'Open',
+  submitted: 'Finalized',
+  cancelled: 'Cancelled',
+}
+
+const attendanceStatusLabels: Record<string, string> = {
+  present: 'Present',
+  absent: 'Absent',
+  late: 'Late',
+  excused: 'Excused',
+}
+
 export function AttendancePage() {
   const { user } = useAuth()
   const [mode, setMode] = useState<ViewMode>('sessions')
@@ -39,6 +62,7 @@ export function AttendancePage() {
   const [sessions, setSessions] = useState<AttendanceSession[]>([])
   const [records, setRecords] = useState<AttendanceRecordItem[]>([])
   const [summary, setSummary] = useState(emptySummary)
+  const [sessionSummary, setSessionSummary] = useState(emptySessionSummary)
   const [page, setPage] = useState(1)
   const [lastPage, setLastPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -82,6 +106,7 @@ export function AttendancePage() {
           ? fetchAttendanceSessions(requestFilters).then((result) => {
               if (!active) return
               setSessions(result.sessions)
+              setSessionSummary(result.summary)
               setLastPage(result.pagination.last_page)
               setTotal(result.pagination.total)
             })
@@ -124,13 +149,8 @@ export function AttendancePage() {
       <PageHeader
         eyebrow="Academic operations"
         title="Attendance"
-        description="Monitor class meetings and student attendance within your authorized program scope."
-        actions={(
-          <div className="flex items-center gap-2">
-            {user?.role === 'administrator' ? <Badge tone="info">Policy management</Badge> : null}
-            <Badge tone="info">Stage 6</Badge>
-          </div>
-        )}
+        description="Monitor class meetings, review student attendance, and correct finalized records within your authorized program scope."
+        actions={user?.role === 'administrator' ? <Badge tone="info">Policy management</Badge> : null}
       />
 
       {user?.role === 'administrator' ? <AttendancePolicyManagement /> : null}
@@ -141,24 +161,31 @@ export function AttendancePage() {
         </div>
       ) : null}
 
-      {mode === 'records' ? (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {[
-            ['Present', summary.present],
-            ['Absent', summary.absent],
-            ['Late', summary.late],
-            ['Excused', summary.excused],
-            ['Records', summary.total],
-          ].map(([label, value]) => (
-            <Card key={label} className="px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
-                {label}
-              </p>
-              <p className="mt-1 font-display text-2xl font-semibold text-ink">{value}</p>
-            </Card>
-          ))}
-        </div>
-      ) : null}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {(mode === 'sessions'
+          ? [
+              ['Held sessions', sessionSummary.held],
+              ['Not started', sessionSummary.not_started],
+              ['Not finalized', sessionSummary.unfinalized],
+              ['Finalized', sessionSummary.finalized],
+              ['Cancelled', sessionSummary.cancelled],
+            ]
+          : [
+              ['Present', summary.present],
+              ['Absent', summary.absent],
+              ['Late', summary.late],
+              ['Excused', summary.excused],
+              ['Records', summary.total],
+            ]
+        ).map(([label, value]) => (
+          <Card key={label} className="px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">
+              {label}
+            </p>
+            <p className="mt-1 font-display text-2xl font-semibold text-ink">{value}</p>
+          </Card>
+        ))}
+      </div>
 
       <Card>
         <CardBody>
@@ -260,7 +287,11 @@ export function AttendancePage() {
               options={(mode === 'sessions'
                 ? ['open', 'submitted', 'cancelled']
                 : ['present', 'absent', 'late', 'excused']
-              ).map((status, index) => ({ id: index + 1, label: status, value: status }))}
+              ).map((status, index) => ({
+                id: index + 1,
+                label: sessionStatusLabels[status] ?? attendanceStatusLabels[status] ?? status,
+                value: status,
+              }))}
             />
             <div className="grid grid-cols-2 gap-2">
               <label className="space-y-1.5 text-sm font-medium text-ink">
@@ -312,49 +343,59 @@ export function AttendancePage() {
               </div>
             ) : (
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[780px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
                       <th className="px-4 py-3">Class meeting</th>
                       <th className="px-4 py-3">Program / term</th>
                       <th className="px-4 py-3">Professor</th>
                       <th className="px-4 py-3">Date / time</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Records</th>
+                      <th className="px-4 py-3">Lifecycle</th>
+                      <th className="px-4 py-3">Attendance</th>
                       <th className="px-4 py-3 text-right">Details</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {sessions.map((session) => (
-                      <tr key={session.id}>
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-ink">{session.offering.subject.code} · {session.offering.subject.title}</p>
-                          <p className="mt-1 text-xs text-ink-muted">{session.offering.section.code}</p>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-ink-muted">
-                          <p>{session.offering.section.program.code}</p>
-                          <p className="mt-1">{session.offering.academic_term.academic_year} · {session.offering.academic_term.name}</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {session.professors.map((professor) => professor.name).join(', ') || '—'}
-                        </td>
-                        <td className="px-4 py-4 text-xs text-ink-muted">
-                          <p>{session.class_date}</p>
-                          <p className="mt-1">{session.schedule.start_time}–{session.schedule.end_time}</p>
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge tone={session.status === 'submitted' ? 'success' : session.status === 'cancelled' ? 'danger' : 'neutral'}>
-                            {session.status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">{session.record_count ?? 0}</td>
-                        <td className="px-4 py-4 text-right">
-                          <Button size="sm" variant="outline" onClick={() => setSelectedSessionId(session.id)}>
-                            Review
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {sessions.map((session) => {
+                      const lifecycle = attendanceSessionLifecycle(session)
+                      const counts = session.record_counts
+                      const rooms = session.schedule.rooms.map((room) => room.code).join(', ')
+
+                      return (
+                        <tr key={session.id}>
+                          <td className="px-4 py-4">
+                            <p className="font-semibold text-ink">{session.offering.subject.code} · {session.offering.subject.title}</p>
+                            <p className="mt-1 text-xs text-ink-muted">
+                              {session.offering.section.code}{rooms ? ` · Room ${rooms}` : ''}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-ink-muted">
+                            <p>{session.offering.section.program.code}</p>
+                            <p className="mt-1">{session.offering.academic_term.academic_year} · {session.offering.academic_term.name}</p>
+                          </td>
+                          <td className="px-4 py-4 text-ink-muted">
+                            {session.professors.map((professor) => professor.name).join(', ') || '—'}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-ink-muted">
+                            <p>{session.class_date}</p>
+                            <p className="mt-1">{session.schedule.start_time}–{session.schedule.end_time}</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <Badge tone={lifecycle.tone}>{lifecycle.label}</Badge>
+                            <p className="mt-1 max-w-44 text-xs leading-5 text-ink-muted">{lifecycle.detail}</p>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-ink-muted">
+                            <p>Present {counts?.present ?? 0} · Late {counts?.late ?? 0}</p>
+                            <p className="mt-1">Absent {counts?.absent ?? 0} · Excused {counts?.excused ?? 0}</p>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <Button size="sm" variant="outline" onClick={() => setSelectedSessionId(session.id)}>
+                              Review
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -369,19 +410,19 @@ export function AttendancePage() {
             </div>
           ) : (
             <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[1040px] text-left text-sm">
                 <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   <tr>
                     <th className="px-4 py-3">Student</th>
                     <th className="px-4 py-3">Subject / section</th>
-                    <th className="px-4 py-3">Program / term</th>
-                    <th className="px-4 py-3">Class date</th>
+                    <th className="px-4 py-3">Class date / check-in</th>
                     <th className="px-4 py-3">Attendance</th>
+                    <th className="px-4 py-3">Term standing</th>
                     <th className="px-4 py-3 text-right">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {records.map(({ attendance, session }) => (
+                  {records.map(({ attendance, session, standing }) => (
                     <tr key={attendance.id}>
                       <td className="px-4 py-4">
                         <p className="font-semibold text-ink">{attendance.student.name}</p>
@@ -390,21 +431,37 @@ export function AttendancePage() {
                       <td className="px-4 py-4">
                         <p>{session.offering.subject.code} · {session.offering.section.code}</p>
                         <p className="mt-1 text-xs text-ink-muted">{session.offering.subject.title}</p>
+                        <p className="mt-1 text-xs text-ink-muted">
+                          {session.offering.section.program.code} · {session.offering.academic_term.academic_year} {session.offering.academic_term.name}
+                        </p>
                       </td>
                       <td className="px-4 py-4 text-xs text-ink-muted">
-                        <p>{session.offering.section.program.code}</p>
-                        <p className="mt-1">{session.offering.academic_term.academic_year} · {session.offering.academic_term.name}</p>
-                      </td>
-                      <td className="px-4 py-4 text-ink-muted">
-                        {session.class_date}
+                        <p>{session.class_date}</p>
+                        <p className="mt-1">{attendance.check_in_at ? `Checked in ${attendance.check_in_at}` : 'No check-in recorded'}</p>
                         {session.status === 'cancelled' ? (
-                          <p className="mt-1 text-xs text-amber-700">Session cancelled</p>
+                          <p className="mt-1 text-amber-700">Session cancelled</p>
                         ) : null}
                       </td>
                       <td className="px-4 py-4">
-                        <Badge tone={attendance.status === 'present' ? 'success' : attendance.status === 'absent' ? 'danger' : 'neutral'}>
-                          {attendance.status}
+                        <Badge tone={attendance.status === 'present' ? 'success' : attendance.status === 'absent' ? 'danger' : attendance.status === 'late' ? 'warning' : 'info'}>
+                          {attendanceStatusLabels[attendance.status] ?? attendance.status}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-ink-muted">
+                        {standing ? (
+                          <div className="space-y-1">
+                            <p>
+                              <span className={standing.allowance_exceeded ? 'font-semibold text-red-700' : 'font-semibold text-ink'}>
+                                {standing.absence_equivalents}
+                              </span>{' '}
+                              absence eq. · {standing.allowed_absences === null ? 'No allowance set' : `${standing.allowed_absences} allowed`}
+                            </p>
+                            <p>
+                              Attendance {standing.attendance_percentage === null ? '—' : `${standing.attendance_percentage}%`}
+                              {' · '}Weighted {standing.weighted_contribution === null ? '—' : `${standing.weighted_contribution}/20`}
+                            </p>
+                          </div>
+                        ) : '—'}
                       </td>
                       <td className="px-4 py-4 text-right">
                         <Button size="sm" variant="outline" onClick={() => setSelectedSessionId(session.id)}>
@@ -421,7 +478,7 @@ export function AttendancePage() {
           {!isLoading && !error && total > 0 ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-ink-muted">
-                {total} record{total === 1 ? '' : 's'} · Page {page} of {lastPage}
+                {total} {mode === 'sessions' ? 'session' : 'record'}{total === 1 ? '' : 's'} · Page {page} of {lastPage}
               </p>
               <div className="flex gap-2">
                 <Button

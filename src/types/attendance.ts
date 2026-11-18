@@ -32,15 +32,20 @@ export interface AttendanceSession {
   status: AttendanceSessionStatus
   created_by_user_id: number | null
   submitted_at: string | null
+  qr_opened_at: string | null
+  qr_closed_at: string | null
+  qr_active: boolean
   cancelled_at: string | null
   cancellation_reason: string | null
   record_count?: number
+  record_counts?: AttendanceSummary
   schedule: {
     id: number
     day_of_week: number
     start_time: string
     end_time: string
     status: string
+    rooms: Array<{ id: number; code: string; name: string | null }>
   }
   offering: {
     id: number
@@ -102,9 +107,25 @@ export interface AttendanceSessionDetail {
   roster: AttendanceRosterEntry[]
 }
 
+export interface AttendanceStanding {
+  present: number
+  late: number
+  absent: number
+  excused: number
+  late_absence_equivalents: number
+  absence_equivalents: number
+  eligible_meetings: number
+  allowed_absences: number | null
+  remaining_absences: number | null
+  attendance_percentage: number | null
+  weighted_contribution: number | null
+  allowance_exceeded: boolean
+}
+
 export interface AttendanceRecordItem {
   attendance: AttendanceRecord
   session: AttendanceSession
+  standing: AttendanceStanding | null
 }
 
 export interface AttendancePagination {
@@ -120,6 +141,14 @@ export interface AttendanceSummary {
   late: number
   excused: number
   total: number
+}
+
+export interface AttendanceSessionSummary {
+  held: number
+  not_started: number
+  unfinalized: number
+  finalized: number
+  cancelled: number
 }
 
 export interface AttendanceFilters {

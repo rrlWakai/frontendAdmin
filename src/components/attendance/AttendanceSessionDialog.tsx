@@ -8,6 +8,11 @@ import type {
   AttendanceStatus,
 } from '@/types/attendance'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
+import {
+  attendanceSessionLifecycle,
+  countAttendanceRoster,
+  formatAttendanceDateTime,
+} from '@/utils/attendance'
 
 interface AttendanceSessionDialogProps {
   sessionId: number
@@ -96,6 +101,9 @@ export function AttendanceSessionDialog({
     }]
   }) ?? []
 
+  const lifecycle = detail ? attendanceSessionLifecycle(detail.session) : null
+  const counts = detail ? countAttendanceRoster(detail.roster) : null
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!detail || changedRecords.length === 0) return
@@ -106,8 +114,17 @@ export function AttendanceSessionDialog({
 
     try {
       await correctAttendanceRecords(detail.session.id, changedRecords, correctionReason.trim())
+      const refreshed = await fetchAttendanceSession(sessionId)
       setCorrectionReason('')
-      setDetail(await fetchAttendanceSession(sessionId))
+      setDetail(refreshed)
+      setDrafts(Object.fromEntries(
+        refreshed.roster.flatMap((entry) => entry.attendance
+          ? [[entry.attendance.id, {
+              status: entry.attendance.status,
+              remarks: entry.attendance.remarks ?? '',
+            }]]
+          : []),
+      ))
       onSaved()
     } catch (failure) {
       setError(getApiErrorMessage(failure, 'Unable to save attendance corrections.'))
@@ -162,9 +179,7 @@ export function AttendanceSessionDialog({
         ) : detail ? (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <Badge tone={detail.session.status === 'submitted' ? 'success' : detail.session.status === 'cancelled' ? 'danger' : 'neutral'}>
-                {detail.session.status}
-              </Badge>
+              <Badge tone={lifecycle?.tone ?? 'neutral'}>{lifecycle?.label ?? detail.session.status}</Badge>
               <span className="text-sm text-ink-muted">
                 {detail.session.schedule.start_time}–{detail.session.schedule.end_time}
               </span>
@@ -172,6 +187,32 @@ export function AttendanceSessionDialog({
                 {detail.session.offering.section.program.code} · {detail.session.offering.subject.title}
               </span>
             </div>
+
+            <div className="rounded-lg border border-line bg-stone-50 px-3 py-2 text-xs leading-5 text-ink-muted">
+              <p>{lifecycle?.detail}</p>
+              <p>
+                QR opened: {formatAttendanceDateTime(detail.session.qr_opened_at)}
+                {' · '}QR closed: {formatAttendanceDateTime(detail.session.qr_closed_at)}
+                {' · '}Finalized: {formatAttendanceDateTime(detail.session.submitted_at)}
+              </p>
+            </div>
+
+            {counts ? (
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-line p-3 text-xs sm:grid-cols-5">
+                {[
+                  ['Present', counts.present],
+                  ['Late', counts.late],
+                  ['Absent', counts.absent],
+                  ['Excused', counts.excused],
+                  ['Unrecorded', counts.unrecorded],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <p className="font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+                    <p className="mt-1 text-base font-semibold text-ink">{value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             {detail.session.status === 'cancelled' ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -199,6 +240,9 @@ export function AttendanceSessionDialog({
                         <td className="px-4 py-3">
                           <p className="font-medium text-ink">{entry.student.name}</p>
                           <p className="text-xs text-ink-muted">{entry.student.student_number}</p>
+                          <p className="mt-1 text-xs text-ink-muted">
+                            {attendance?.check_in_at ? `Checked in ${attendance.check_in_at}` : 'No check-in'}
+                          </p>
                         </td>
                         <td className="px-4 py-3">
                           {canCorrect && attendance && detail.session.status === 'submitted' ? (
@@ -242,9 +286,15 @@ export function AttendanceSessionDialog({
                         <td className="max-w-64 px-4 py-3 text-xs leading-5 text-ink-muted">
                           {attendance?.changes?.length
                             ? attendance.changes.map((change, index) => (
-                                <p key={`${attendance.id}-${index}`} className="mb-2 last:mb-0">
-                                  {change.previous_status} → {change.new_status}: {change.correction_reason}
-                                </p>
+                                <div key={`${attendance.id}-${index}`} className="mb-2 last:mb-0">
+                                  <p className="font-medium text-ink">
+                                    {change.previous_status} → {change.new_status}
+                                  </p>
+                                  <p>{change.correction_reason}</p>
+                                  <p className="mt-0.5 text-[11px]">
+                                    {change.changed_by ?? 'Unknown user'} · {formatAttendanceDateTime(change.changed_at)}
+                                  </p>
+                                </div>
                               ))
                             : '—'}
                         </td>

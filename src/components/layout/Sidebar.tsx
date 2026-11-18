@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Library,
   Sparkles,
-  TriangleAlert,
   Users,
   UserRound,
   X,
@@ -75,10 +74,7 @@ const navigation: NavigationGroup[] = [
   },
   {
     label: 'Schedule',
-    items: [
-      { label: 'Schedule', to: '/scheduling', icon: CalendarDays },
-      { label: 'Conflicts', to: '/student-schedule-conflicts', icon: TriangleAlert },
-    ],
+    items: [{ label: 'Schedule', to: '/scheduling', icon: CalendarDays }],
   },
   {
     label: 'Academic',
