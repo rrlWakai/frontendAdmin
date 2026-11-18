@@ -61,6 +61,8 @@ function getBranchKey(item: NavigationParent, pathname: string): string {
 
 const academicChildren: NavigationChild[] = [
   { label: 'Programs', to: '/academic', end: true },
+  { label: 'Majors', to: '/academic/majors' },
+  { label: 'Curriculum', to: '/academic/curriculum' },
   { label: 'Academic Terms', to: '/academic/terms' },
   { label: 'Year Levels', to: '/academic/year-levels' },
   { label: 'Sections', to: '/academic/sections' },

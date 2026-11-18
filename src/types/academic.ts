@@ -76,12 +76,16 @@ export interface AcademicSubject extends AcademicRecord {
   lecture_hours: string
   lab_hours: string
   status: 'active' | 'inactive'
+  curriculum_requirements_count?: number
+  subject_offerings_count?: number
 }
 
 export interface AcademicCurriculumRequirement extends AcademicRecord {
   program_id: number
   year_level_id: number
+  semester: 'first' | 'second' | 'summer' | null
   major_id: number | null
+  classification: 'common' | 'major'
   subject_id: number
   requirement_type: 'core' | 'minor' | 'major' | 'elective'
   status: 'active' | 'inactive'

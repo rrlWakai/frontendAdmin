@@ -17,6 +17,8 @@ export interface AcademicFilters {
   status?: string
   program_id?: number
   year_level_id?: number
+  semester?: string
+  classification?: string
   academic_term_id?: number
   academic_year_id?: number
   major_id?: number

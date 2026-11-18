@@ -9,6 +9,7 @@ import type {
   ScheduleInput,
   ScheduleRecord,
   SchedulingOptions,
+  SchedulingReadiness,
 } from '@/types/scheduling'
 import { apiClient } from '@/services/api/client'
 
@@ -18,6 +19,15 @@ export async function fetchSchedulingOptions(termId: number): Promise<Scheduling
   })
 
   return data.data
+}
+
+export async function fetchSchedulingReadiness(termId: number): Promise<SchedulingReadiness> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ readiness: SchedulingReadiness }>>(
+    '/scheduling/readiness',
+    { params: { academic_term_id: termId } },
+  )
+
+  return data.data.readiness
 }
 
 export async function fetchSchedules(filters: ScheduleFilters): Promise<ScheduleDirectory> {

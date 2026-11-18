@@ -52,6 +52,49 @@ export interface SchedulingOptions {
   rooms: SchedulingRoom[]
 }
 
+export type SchedulingReadinessSeverity = 'blocking' | 'warning' | 'info'
+
+export interface SchedulingReadinessIssue {
+  severity: SchedulingReadinessSeverity
+  code: string
+  category: string
+  message: string
+  entity_type: string | null
+  entity_id: string | null
+  related_ids: string[]
+}
+
+export interface SchedulingReadiness {
+  academic_term: {
+    id: string
+    academic_year: string
+    term: string
+    name: string
+    status: string
+    starts_on: string | null
+    ends_on: string | null
+  }
+  ready: boolean
+  generation_available: boolean
+  blocking_count: number
+  warning_count: number
+  info_count: number
+  counts: {
+    offerings: number
+    programs: number
+    year_levels: number
+    sections: number
+    assigned_professors: number
+    available_rooms: number
+    published_schedules: number
+    draft_schedules: number
+    open_conflicts: number
+  }
+  issues: SchedulingReadinessIssue[]
+  capabilities: Record<string, boolean>
+  inspected_at: string
+}
+
 export interface ScheduleAssignment {
   id: number
   faculty_assignment_id: number

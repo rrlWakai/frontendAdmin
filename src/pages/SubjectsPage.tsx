@@ -6,7 +6,8 @@ import type { AcademicSubject } from '@/types/academic'
 const config: AcademicPageConfig<AcademicSubject> = {
   resource: 'subjects',
   title: 'Subject catalog',
-  description: 'Maintain subject codes, titles, descriptions, units, and lecture/laboratory hours.',
+  description:
+    'Maintain the centralized subject definitions used by curriculum mappings and subject offerings.',
   singular: 'Subject',
   searchPlaceholder: 'Subject code or title',
   emptyDescription: 'Subjects will appear here when they are created.',
@@ -45,6 +46,8 @@ const config: AcademicPageConfig<AcademicSubject> = {
     },
     { label: 'Units', render: (subject) => subject.units },
     { label: 'Lecture / lab hours', render: (subject) => `${subject.lecture_hours} / ${subject.lab_hours}` },
+    { label: 'Curriculum mappings', render: (subject) => subject.curriculum_requirements_count ?? 0 },
+    { label: 'Offerings', render: (subject) => subject.subject_offerings_count ?? 0 },
     { label: 'Status', render: (subject) => <AcademicStatusBadge status={subject.status} /> },
   ],
 }

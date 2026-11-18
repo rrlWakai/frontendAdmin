@@ -17,12 +17,17 @@ import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { fetchProfessor } from '@/services/api/faculty'
-import { fetchOfferingFacultyAssignments, fetchSchedules } from '@/services/api/scheduling'
+import {
+  fetchOfferingFacultyAssignments,
+  fetchSchedulingReadiness,
+  fetchSchedules,
+} from '@/services/api/scheduling'
 import type { AcademicTerm } from '@/types/academic'
 import type {
   ScheduleConflictRecord,
   ScheduleRecord,
   SchedulingOptions,
+  SchedulingReadiness,
 } from '@/types/scheduling'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { cn } from '@/utils/cn'
@@ -163,6 +168,10 @@ export function IntelligentScheduleWorkspace({
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [inventoryVersion, setInventoryVersion] = useState(0)
+  const [readiness, setReadiness] = useState<SchedulingReadiness | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(true)
+  const [readinessError, setReadinessError] = useState<string | null>(null)
+  const [readinessVersion, setReadinessVersion] = useState(0)
   const [assignmentReadiness, setAssignmentReadiness] = useState<AssignmentReadiness | null>(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
   const [checkedOfferingCount, setCheckedOfferingCount] = useState(0)
@@ -206,6 +215,34 @@ export function IntelligentScheduleWorkspace({
 
     return () => { active = false }
   }, [inventoryVersion, termId])
+
+  useEffect(() => {
+    let active = true
+    if (!termId) {
+      setReadiness(null)
+      setReadinessLoading(false)
+      setReadinessError(null)
+      return () => { active = false }
+    }
+
+    void Promise.resolve().then(async () => {
+      setReadinessLoading(true)
+      setReadinessError(null)
+      try {
+        const result = await fetchSchedulingReadiness(termId)
+        if (active) setReadiness(result)
+      } catch (failure) {
+        if (active) {
+          setReadiness(null)
+          setReadinessError(getApiErrorMessage(failure, 'Unable to validate offerings against the active curriculum.'))
+        }
+      } finally {
+        if (active) setReadinessLoading(false)
+      }
+    })
+
+    return () => { active = false }
+  }, [readinessVersion, termId])
 
   const checkAssignments = useCallback(async () => {
     if (!options?.offerings.length) return
@@ -344,6 +381,49 @@ export function IntelligentScheduleWorkspace({
         ? `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary offering.`
         : `${assignmentReadiness?.checkedOfferings ?? 0} offerings each have exactly one distinct assigned professor.`
 
+  const curriculumIssues = readiness?.issues.filter((issue) => (
+    issue.code === 'offering_subject_not_in_curriculum' || issue.code.startsWith('curriculum_')
+  )) ?? []
+  const curriculumBlockingCount = curriculumIssues.filter((issue) => issue.severity === 'blocking').length
+  const curriculumWarningCount = curriculumIssues.filter((issue) => issue.severity === 'warning').length
+  const missingOfferingScopes = curriculumIssues.filter((issue) => issue.code === 'curriculum_offering_missing').length
+  const missingMappingScopes = curriculumIssues.filter((issue) => issue.code === 'curriculum_mapping_missing').length
+  const unrecognizedSemester = curriculumIssues.some((issue) => issue.code === 'curriculum_semester_unrecognized')
+  const curriculumCheckState: ReadinessState = readinessLoading
+    ? 'checking'
+    : readinessError || !readiness
+      ? 'blocked'
+      : configuredOfferings.length === 0
+        ? 'blocked'
+        : curriculumBlockingCount
+          ? 'blocked'
+          : curriculumWarningCount
+            ? 'warning'
+            : 'ready'
+  const curriculumDetail = readinessLoading
+    ? 'Validating open offerings against the active curriculum…'
+    : readinessError
+      ? readinessError
+      : !readiness
+        ? 'Curriculum validation is unavailable, so the offering set cannot be confirmed.'
+        : configuredOfferings.length === 0
+          ? 'No open offerings are available to validate against the curriculum.'
+          : curriculumBlockingCount
+            ? `${curriculumBlockingCount} curriculum validation issue${curriculumBlockingCount === 1 ? '' : 's'} found. Open offerings must match an active mapping for the section program, year level, semester, and major.`
+            : curriculumWarningCount
+              ? [
+                  missingMappingScopes
+                    ? `${missingMappingScopes} program/year/semester scope${missingMappingScopes === 1 ? '' : 's'} have no active curriculum mapping.`
+                    : null,
+                  missingOfferingScopes
+                    ? `${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open offering.`
+                    : null,
+                  unrecognizedSemester
+                    ? 'The term semester is not recognized, so curriculum mappings cannot be matched.'
+                    : null,
+                ].filter(Boolean).join(' ')
+              : `${configuredOfferings.length} open offerings match active curriculum mappings. Only this validated set may be consumed by generation.`
+
   const academicChecks: ReadinessCheck[] = [
     {
       title: 'Academic term',
@@ -365,15 +445,33 @@ export function IntelligentScheduleWorkspace({
     },
     {
       title: 'Required subject offerings',
-      state: optionsLoading ? 'checking' : loadError ? 'blocked' : configuredOfferings.length ? 'warning' : 'blocked',
-      detail: optionsLoading
-        ? 'Loading open subject offerings…'
-        : loadError
-          ? loadError
+      state: optionsLoading || readinessLoading
+        ? 'checking'
+        : loadError || readinessError
+          ? 'blocked'
           : configuredOfferings.length
-            ? `${configuredOfferings.length} open offerings are available. CCSync cannot yet confirm the complete required-offering set.`
+            ? missingMappingScopes || missingOfferingScopes
+              ? 'warning'
+              : 'ready'
+            : 'blocked',
+      detail: optionsLoading || readinessLoading
+        ? 'Loading open subject offerings and curriculum coverage…'
+        : loadError || readinessError
+          ? (loadError || readinessError || 'Curriculum coverage could not be confirmed.')
+          : configuredOfferings.length
+            ? missingMappingScopes
+              ? `${configuredOfferings.length} open offerings are available, but ${missingMappingScopes} program/year/semester scope${missingMappingScopes === 1 ? '' : 's'} have no active curriculum mapping, so required coverage cannot be confirmed.`
+              : missingOfferingScopes
+                ? `${configuredOfferings.length} open offerings are available, but ${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open offering.`
+                : `${configuredOfferings.length} open offerings cover every subject mapped to the active curriculum scopes for this term.`
             : 'No open offerings are available. Create or open subject offerings before scheduling.',
       link: { to: '/academic/subject-offerings', label: 'Review subject offerings' },
+    },
+    {
+      title: 'Validated offering set',
+      state: curriculumCheckState,
+      detail: curriculumDetail,
+      link: { to: '/academic/curriculum', label: 'Review curriculum mappings' },
     },
   ]
 
@@ -552,7 +650,7 @@ export function IntelligentScheduleWorkspace({
   const allChecks = categories.flatMap((category) => category.checks)
   const blockingCount = allChecks.filter((check) => check.state === 'blocked').length
   const warningCount = allChecks.filter((check) => check.state === 'warning').length
-  const readinessState: ReadinessState = optionsLoading || inventoryLoading || assignmentLoading
+  const readinessState: ReadinessState = optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
     ? 'checking'
     : blockingCount
       ? 'blocked'
@@ -562,7 +660,7 @@ export function IntelligentScheduleWorkspace({
 
   const generationReason = !term
     ? 'Select an active or planned academic term to continue.'
-    : optionsLoading || inventoryLoading || assignmentLoading
+    : optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
       ? 'Waiting for scheduling inputs to finish loading.'
       : blockingCount
         ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved before generation.`
@@ -617,7 +715,10 @@ export function IntelligentScheduleWorkspace({
           canGenerate={generationReady}
           generationReason={generationReason}
           onCheckAssignments={() => void handleCheckAssignments()}
-          onRefreshInventory={() => setInventoryVersion((value) => value + 1)}
+          onRefreshInventory={() => {
+            setInventoryVersion((value) => value + 1)
+            setReadinessVersion((value) => value + 1)
+          }}
           inventoryLoading={inventoryLoading}
         />
       ) : null}
@@ -819,7 +920,7 @@ function OverviewStage({
               <span>Expand a category to inspect individual checks.</span>
               <Button variant="ghost" size="sm" onClick={onRefreshInventory} disabled={inventoryLoading} className="h-7 px-2 text-[11px]">
                 <RefreshCw className={cn('size-3.5', inventoryLoading && 'animate-spin')} aria-hidden="true" />
-                Refresh inventory
+                Refresh inputs
               </Button>
             </div>
             {loadError ? (

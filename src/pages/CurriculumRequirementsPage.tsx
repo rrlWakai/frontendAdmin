@@ -10,13 +10,39 @@ const requirementTypes = [
   { value: 'elective', label: 'Elective' },
 ]
 
+const semesters = [
+  { value: 'first', label: 'First semester' },
+  { value: 'second', label: 'Second semester' },
+  { value: 'summer', label: 'Summer' },
+]
+
+const classifications = [
+  { value: 'common', label: 'Common / minor' },
+  { value: 'major', label: 'Major-specific' },
+]
+
+function semesterLabel(semester: AcademicCurriculumRequirement['semester']): string {
+  return semesters.find((option) => option.value === semester)?.label ?? 'Semester not set'
+}
+
+function majorLabel(requirement: AcademicCurriculumRequirement): string {
+  if (requirement.classification !== 'major') {
+    return 'All majors / no major'
+  }
+
+  return requirement.major
+    ? `${requirement.major.code} — ${requirement.major.name}`
+    : 'Major required'
+}
+
 const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
   resource: 'curriculum-requirements',
-  title: 'Curriculum requirements',
-  description: 'Map subjects to program, year level, and optional major scopes for offering guidance.',
-  singular: 'Curriculum requirement',
-  searchPlaceholder: 'Requirement type',
-  emptyDescription: 'Curriculum requirements will appear here when they are created.',
+  title: 'Curriculum mappings',
+  description:
+    'Map catalog subjects to program, year level, semester, and major scope. These mappings validate offerings for scheduling; they never create offerings automatically.',
+  singular: 'Curriculum mapping',
+  searchPlaceholder: 'Requirement type, semester, or classification',
+  emptyDescription: 'Curriculum mappings will appear here when subjects are assigned to a curriculum scope.',
   statusOptions: [
     { value: 'active', label: 'Active' },
     { value: 'inactive', label: 'Inactive' },
@@ -39,6 +65,18 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
       })),
     },
     {
+      key: 'semester',
+      label: 'Semesters',
+      valueType: 'string',
+      options: () => semesters,
+    },
+    {
+      key: 'classification',
+      label: 'Classifications',
+      valueType: 'string',
+      options: () => classifications,
+    },
+    {
       key: 'major_id',
       label: 'Majors',
       options: (choices) => choices.majors.map((major) => ({
@@ -53,6 +91,7 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
       label: 'Program',
       type: 'select',
       required: true,
+      resets: ['major_id'],
       options: (choices) => choices.programs.map((program) => ({
         value: String(program.id),
         label: `${program.code} — ${program.name}`,
@@ -69,13 +108,33 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
       })),
     },
     {
-      name: 'major_id',
-      label: 'Major (optional)',
+      name: 'semester',
+      label: 'Semester',
       type: 'select',
-      options: (choices) => choices.majors.map((major) => ({
-        value: String(major.id),
-        label: `${major.code} — ${major.name}`,
-      })),
+      required: true,
+      defaultValue: 'first',
+      options: () => semesters,
+    },
+    {
+      name: 'classification',
+      label: 'Classification',
+      type: 'select',
+      required: true,
+      defaultValue: 'common',
+      options: () => classifications,
+    },
+    {
+      name: 'major_id',
+      label: 'Major (major-specific only)',
+      type: 'select',
+      requiredWhen: (values) => values.classification === 'major',
+      disabledWhen: (values) => values.classification !== 'major',
+      options: (choices, values) => choices.majors
+        .filter((major) => String(major.program_id) === values.program_id)
+        .map((major) => ({
+          value: String(major.id),
+          label: `${major.code} — ${major.name}`,
+        })),
     },
     {
       name: 'subject_id',
@@ -121,11 +180,17 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
       label: 'Scope',
       render: (requirement) => (
         <>
-          <p>{requirement.program.code} · {requirement.year_level.name}</p>
-          <p className="mt-1 text-xs">
-            {requirement.major ? `${requirement.major.code} — ${requirement.major.name}` : 'All majors / no major'}
-          </p>
+          <p>{requirement.program.code} · {requirement.year_level.name} · {semesterLabel(requirement.semester)}</p>
+          <p className="mt-1 text-xs">{majorLabel(requirement)}</p>
         </>
+      ),
+    },
+    {
+      label: 'Classification',
+      render: (requirement) => (
+        <span className="capitalize">
+          {requirement.classification === 'major' ? 'Major-specific' : 'Common / minor'}
+        </span>
       ),
     },
     { label: 'Type', render: (requirement) => <span className="capitalize">{requirement.requirement_type}</span> },

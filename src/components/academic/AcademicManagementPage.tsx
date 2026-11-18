@@ -26,29 +26,37 @@ interface SelectOption {
   label: string
 }
 
+export type AcademicFormValues = Record<string, string>
+
 export interface AcademicFormField<T extends AcademicRecord> {
   name: keyof T & string
   label: string
   type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox'
   required?: boolean
+  requiredWhen?: (values: AcademicFormValues) => boolean
+  disabledWhen?: (values: AcademicFormValues) => boolean
+  resets?: Array<keyof T & string>
   min?: number
   max?: number
   step?: number
   maxLength?: number
   defaultValue?: string
-  options?: (choices: AcademicOptions) => SelectOption[]
+  options?: (choices: AcademicOptions, values: AcademicFormValues) => SelectOption[]
 }
 
 export interface AcademicFilter {
   key:
     | 'program_id'
     | 'year_level_id'
+    | 'semester'
+    | 'classification'
     | 'academic_term_id'
     | 'academic_year_id'
     | 'major_id'
     | 'subject_id'
     | 'target_year_level_id'
   label: string
+  valueType?: 'number' | 'string'
   options: (choices: AcademicOptions) => SelectOption[]
 }
 
@@ -71,7 +79,6 @@ export interface AcademicPageConfig<T extends AcademicRecord> {
   emptyDescription: string
 }
 
-type FormValues = Record<string, string>
 type AcademicPayload = Record<string, string | number | boolean | null>
 
 function valueAsText(value: unknown): string {
@@ -80,17 +87,21 @@ function valueAsText(value: unknown): string {
 
 function makePayload<T extends AcademicRecord>(
   fields: AcademicFormField<T>[],
-  values: FormValues,
+  values: AcademicFormValues,
 ): AcademicPayload {
   return Object.fromEntries(
     fields.map((field) => {
       const value = values[field.name] ?? ''
 
+      if (field.disabledWhen?.(values)) {
+        return [field.name, field.type === 'checkbox' ? false : null]
+      }
+
       if (field.type === 'checkbox') {
         return [field.name, value === 'true']
       }
 
-      if (value === '' && !field.required) {
+      if (value === '' && !field.required && !field.requiredWhen?.(values)) {
         return [field.name, null]
       }
 
@@ -123,7 +134,7 @@ function AcademicRecordDialog<T extends AcademicRecord>({
   onSubmit,
 }: AcademicRecordDialogProps<T>) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const [values, setValues] = useState<FormValues>(() =>
+  const [values, setValues] = useState<AcademicFormValues>(() =>
     Object.fromEntries(
       config.fields.map((field) => [
         field.name,
@@ -146,6 +157,20 @@ function AcademicRecordDialog<T extends AcademicRecord>({
     dialog?.showModal()
     return () => dialog?.close()
   }, [])
+
+  function setFieldValue(field: AcademicFormField<T>, value: string) {
+    setValues((current) => {
+      const next = { ...current, [field.name]: value }
+
+      for (const reset of field.resets ?? []) {
+        next[reset] = ''
+      }
+
+      return next
+    })
+    setFieldErrors((current) => ({ ...current, [field.name]: [] }))
+    setError(null)
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -203,6 +228,8 @@ function AcademicRecordDialog<T extends AcademicRecord>({
             const fieldId = `academic-${field.name}`
             const fieldError = firstFieldError(fieldErrors, field.name)
             const value = values[field.name] ?? ''
+            const required = field.required || field.requiredWhen?.(values) === true
+            const disabled = field.disabledWhen?.(values) === true
 
             if (field.type === 'checkbox') {
               return (
@@ -238,18 +265,15 @@ function AcademicRecordDialog<T extends AcademicRecord>({
                     id={fieldId}
                     label={field.label}
                     type={field.type}
-                    required={field.required}
+                    required={required}
                     min={field.min}
                     max={field.max}
                     step={field.step}
                     maxLength={field.maxLength}
-                    value={value}
+                    value={disabled ? '' : value}
+                    disabled={disabled}
                     error={fieldError}
-                    onChange={(event) => {
-                      setValues((current) => ({ ...current, [field.name]: event.target.value }))
-                      setFieldErrors((current) => ({ ...current, [field.name]: [] }))
-                      setError(null)
-                    }}
+                    onChange={(event) => setFieldValue(field, event.target.value)}
                   />
                 ) : field.type === 'select' ? (
                   <>
@@ -258,18 +282,15 @@ function AcademicRecordDialog<T extends AcademicRecord>({
                     </label>
                   <select
                     id={fieldId}
-                    required={field.required}
-                    value={value}
+                    required={required}
+                    disabled={disabled}
+                    value={disabled ? '' : value}
                     aria-invalid={Boolean(fieldError)}
-                    onChange={(event) => {
-                      setValues((current) => ({ ...current, [field.name]: event.target.value }))
-                      setFieldErrors((current) => ({ ...current, [field.name]: [] }))
-                      setError(null)
-                    }}
-                    className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    onChange={(event) => setFieldValue(field, event.target.value)}
+                    className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-ink-muted"
                   >
                     <option value="">Select {field.label.toLowerCase()}</option>
-                    {(field.options?.(options) ?? []).map((option) => (
+                    {(field.options?.(options, values) ?? []).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -283,16 +304,13 @@ function AcademicRecordDialog<T extends AcademicRecord>({
                     </label>
                   <textarea
                     id={fieldId}
-                    required={field.required}
+                    required={required}
+                    disabled={disabled}
                     maxLength={field.maxLength}
-                    value={value}
+                    value={disabled ? '' : value}
                     aria-invalid={Boolean(fieldError)}
-                    onChange={(event) => {
-                      setValues((current) => ({ ...current, [field.name]: event.target.value }))
-                      setFieldErrors((current) => ({ ...current, [field.name]: [] }))
-                      setError(null)
-                    }}
-                    className="min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    onChange={(event) => setFieldValue(field, event.target.value)}
+                    className="min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-ink-muted"
                   />
                   </>
                 )}
@@ -380,11 +398,21 @@ export function AcademicManagementPage<T extends AcademicRecord>({
 
   useEffect(() => {
     let active = true
+    const filterValueTypes = new Map(
+      (config.filters ?? []).map((filter) => [filter.key, filter.valueType ?? 'number']),
+    )
     void fetchAcademicDirectory<T>(config.resource, {
       search: search || undefined,
       status: status || undefined,
       ...Object.fromEntries(
-        Object.entries(filters).map(([key, value]) => [key, value ? Number(value) : undefined]),
+        Object.entries(filters).map(([key, value]) => [
+          key,
+          value
+            ? filterValueTypes.get(key as AcademicFilter['key']) === 'string'
+              ? value
+              : Number(value)
+            : undefined,
+        ]),
       ),
       page,
       per_page: 25,
@@ -408,7 +436,7 @@ export function AcademicManagementPage<T extends AcademicRecord>({
     return () => {
       active = false
     }
-  }, [config.resource, config.title, filters, page, refreshVersion, requestKey, search, status])
+  }, [config.filters, config.resource, config.title, filters, page, refreshVersion, requestKey, search, status])
 
   async function saveRecord(payload: AcademicPayload) {
     if (dialogRecord) {
