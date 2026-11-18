@@ -121,7 +121,7 @@ const routes: RouteObject[] = [
           {
             path: 'attendance',
             element: <AttendancePage />,
-            handle: { title: 'Attendance' } satisfies RouteHandle,
+            handle: { title: 'Attendance Policy' } satisfies RouteHandle,
           },
           {
             path: 'announcements',

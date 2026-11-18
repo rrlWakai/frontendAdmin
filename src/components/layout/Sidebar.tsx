@@ -94,7 +94,7 @@ const navigation: NavigationGroup[] = [
     label: 'Campus',
     items: [
       { label: 'Activities', to: '/activities', icon: Sparkles },
-      { label: 'Attendance', to: '/attendance', icon: ClipboardCheck },
+      { label: 'Attendance Policy', to: '/attendance', icon: ClipboardCheck },
     ],
   },
   {
