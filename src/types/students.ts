@@ -111,3 +111,89 @@ export interface StudentFilters {
   page?: number
   per_page?: number
 }
+
+export interface StudentLogsPagination {
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+}
+
+export interface StudentActivityLogEntry {
+  id: number
+  action: string
+  description: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string | null
+  student: {
+    id: number
+    student_number: string
+    name: string | null
+    status: string
+  }
+  actor: {
+    id: number
+    name: string
+  } | null
+}
+
+export interface StudentActivityLogDirectory {
+  logs: StudentActivityLogEntry[]
+  pagination: StudentLogsPagination
+}
+
+export interface StudentAcademicHistoryRecord {
+  id: number
+  status: string
+  is_current: boolean
+  effective_on: string | null
+  ends_on: string | null
+  removal_pending: boolean
+  student: {
+    id: number
+    user_id: number
+    student_number: string
+    name: string | null
+    status: string
+  }
+  academic_year: { id: number; label: string } | null
+  academic_term: {
+    id: number
+    academic_year: string
+    term: string
+    name: string
+  } | null
+  program: { id: number; code: string; name: string } | null
+  year_level: { id: number; level: number; name: string } | null
+  major: { id: number; code: string; name: string } | null
+  section: { id: number; code: string; name: string | null } | null
+}
+
+export interface StudentAcademicHistoryDirectory {
+  records: StudentAcademicHistoryRecord[]
+  pagination: StudentLogsPagination
+}
+
+export interface RemovedStudentRecord {
+  id: number
+  status: string
+  removed_at: string | null
+  restore_deadline: string | null
+  remaining_seconds: number
+  restored_at: string | null
+  student: {
+    id: number
+    user_id: number
+    student_number: string
+    name: string | null
+    status: string
+  }
+  removed_by: { id: number; name: string } | null
+  restored_by: { id: number; name: string } | null
+}
+
+export interface RemovedStudentDirectory {
+  server_time: string
+  removals: RemovedStudentRecord[]
+  pagination: StudentLogsPagination
+}

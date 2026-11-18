@@ -1,558 +1,642 @@
-import { useEffect, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, Plus, Search, UserRound } from 'lucide-react'
-import { StudentProfileDialog } from '@/components/students/StudentProfileDialog'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Activity,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  History,
+  RotateCcw,
+  Trash2,
+  UserRound,
+} from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
-import { TextField } from '@/components/common/TextField'
-import { UserFormDialog } from '@/components/users/UserFormDialog'
 import { useAuth } from '@/hooks/useAuth'
-import { fetchUserOptions, createUser, updateUser, updateUserStatus } from '@/services/api/users'
-import { fetchStudent, fetchStudents } from '@/services/api/students'
-import type { StudentDetail, StudentDirectoryRecord, StudentPagination } from '@/types/students'
+import {
+  fetchRemovedStudents,
+  fetchStudentAcademicHistory,
+  fetchStudentActivityLogs,
+  removeStudent,
+  restoreStudent,
+} from '@/services/api/students'
 import type {
-  AccountStatus,
-  AccountFormSubmission,
-  ManagedUser,
-  ProgramOption,
-  UpdateUserInput,
-  UserOptions,
-} from '@/types/users'
+  RemovedStudentRecord,
+  StudentAcademicHistoryRecord,
+  StudentActivityLogEntry,
+  StudentLogsPagination,
+} from '@/types/students'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
-function accountStatusTone(status: string): 'success' | 'danger' | 'neutral' {
-  if (status === 'active') return 'success'
-  if (status === 'suspended') return 'danger'
+type TabKey = 'activity' | 'academic' | 'removed'
+
+const tabs: Array<{ key: TabKey; label: string; icon: typeof Activity }> = [
+  { key: 'activity', label: 'Activity Logs', icon: Activity },
+  { key: 'academic', label: 'Academic History', icon: History },
+  { key: 'removed', label: 'Recently Removed', icon: UserRound },
+]
+
+const emptyPagination: StudentLogsPagination = {
+  current_page: 1,
+  last_page: 1,
+  per_page: 25,
+  total: 0,
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? 'Unknown'
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date)
+}
+
+function formatCountdown(remainingMs: number): string {
+  if (remainingMs <= 0) return 'PROCESSING PERMANENT DELETION'
+
+  const totalMinutes = Math.floor(remainingMs / 60_000)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+
+  return `PERMANENT DELETION IN ${days} DAYS : ${hours} HOURS : ${minutes} MINUTES`
+}
+
+function actionLabel(action: string): string {
+  return action
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function actionTone(action: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+  if (action === 'student_removed') return 'danger'
+  if (action === 'student_restored') return 'success'
+  if (action === 'student_permanently_deleted') return 'warning'
+  if (action.startsWith('placement_')) return 'info'
   return 'neutral'
 }
 
-function isAccountStatus(value: string): value is AccountStatus {
-  return value === 'active' || value === 'inactive' || value === 'suspended'
+interface PaginationBarProps {
+  pagination: StudentLogsPagination
+  page: number
+  noun: string
+  onPageChange: (page: number) => void
 }
 
-function toManagedUser(student: StudentDetail): ManagedUser {
-  const program: ProgramOption | null = student.program
-    ? {
-        id: student.program.id,
-        code: student.program.code,
-        name: student.program.name,
-        status: student.program.status,
-      }
-    : null
-
-  return {
-    id: student.user_id,
-    name: student.name,
-    email: student.email ?? '',
-    role: { code: 'student', name: 'Student' },
-    status: student.account_status,
-    last_login_at: null,
-    program_access: [],
-    profile: {
-      type: 'student',
-      student_number: student.student_number,
-      program,
-      admitted_on: student.admitted_on,
-    },
-  }
+function PaginationBar({ pagination, page, noun, onPageChange }: PaginationBarProps) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-xs text-ink-muted">
+        {pagination.total} {noun}
+        {pagination.total === 1 ? '' : 's'} · Page {page} of {pagination.last_page}
+      </p>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={page <= 1}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+        >
+          <ChevronLeft className="size-4" aria-hidden="true" />
+          Previous
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={page >= pagination.last_page}
+          onClick={() => onPageChange(Math.min(pagination.last_page, page + 1))}
+        >
+          Next
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export function StudentsPage() {
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
-  const canRegister = user?.role === 'administrator'
-  const [students, setStudents] = useState<StudentDirectoryRecord[]>([])
-  const [options, setOptions] = useState<UserOptions | null>(null)
-  const [pagination, setPagination] = useState<StudentPagination>({
-    current_page: 1,
-    last_page: 1,
-    per_page: 25,
-    total: 0,
-  })
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<AccountStatus | ''>('')
-  const [programFilter, setProgramFilter] = useState('')
-  const [page, setPage] = useState(1)
-  const [settledListKey, setSettledListKey] = useState<string | null>(null)
-  const [listError, setListError] = useState<{ key: string; message: string } | null>(null)
-  const [optionsError, setOptionsError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [dialogUser, setDialogUser] = useState<ManagedUser | null | undefined>()
-  const [selectedStudent, setSelectedStudent] = useState<StudentDirectoryRecord | null>(null)
-  const [studentDetail, setStudentDetail] = useState<StudentDetail | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  const [isDetailLoading, setIsDetailLoading] = useState(false)
-  const [busyStudentId, setBusyStudentId] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<TabKey>('activity')
   const [refreshVersion, setRefreshVersion] = useState(0)
-  const [detailVersion, setDetailVersion] = useState(0)
-  const [optionsVersion, setOptionsVersion] = useState(0)
-  const [confirmDialog, setConfirmDialog] = useState<{
-    title: string
-    description?: string
-    confirmLabel: string
-    cancelLabel: string
-    destructive: boolean
-    onConfirm: () => void | Promise<void>
-  } | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const listKey = JSON.stringify([search, statusFilter, programFilter, page, refreshVersion])
-  const isLoading = settledListKey !== listKey
-  const error = listError?.key === listKey ? listError.message : null
+  const [activityPage, setActivityPage] = useState(1)
+  const [logs, setLogs] = useState<StudentActivityLogEntry[]>([])
+  const [logPagination, setLogPagination] = useState<StudentLogsPagination>(emptyPagination)
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true)
+  const [logsError, setLogsError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let active = true
-    void Promise.resolve()
-      .then(() => fetchUserOptions())
-      .then((result) => {
-        if (active) setOptions(result)
-      })
-      .catch((failure: unknown) => {
-        if (active) setOptionsError(getApiErrorMessage(failure, 'Unable to load student options.'))
-      })
-    return () => {
-      active = false
-    }
-  }, [optionsVersion])
+  const [academicPage, setAcademicPage] = useState(1)
+  const [history, setHistory] = useState<StudentAcademicHistoryRecord[]>([])
+  const [historyPagination, setHistoryPagination] = useState<StudentLogsPagination>(emptyPagination)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  const [removedPage, setRemovedPage] = useState(1)
+  const [removedStudents, setRemovedStudents] = useState<RemovedStudentRecord[]>([])
+  const [removedPagination, setRemovedPagination] = useState<StudentLogsPagination>(emptyPagination)
+  const [isLoadingRemoved, setIsLoadingRemoved] = useState(true)
+  const [removedError, setRemovedError] = useState<string | null>(null)
+  const [serverOffset, setServerOffset] = useState(0)
+  const [clock, setClock] = useState(() => Date.now())
+
+  const [confirmRemoval, setConfirmRemoval] = useState<StudentAcademicHistoryRecord | null>(null)
+  const [busyRemoveId, setBusyRemoveId] = useState<number | null>(null)
+  const [busyRestoreId, setBusyRestoreId] = useState<number | null>(null)
+
+  const currentTime = useMemo(() => clock + serverOffset, [clock, serverOffset])
 
   useEffect(() => {
-    let active = true
-    void Promise.resolve()
-      .then(() => fetchStudents({
-        search: search || undefined,
-        status: statusFilter || undefined,
-        program_id: programFilter ? Number(programFilter) : undefined,
-        page,
-        per_page: 25,
-      }))
-      .then((result) => {
-        if (active) {
-          setStudents(result.students)
-          setPagination(result.pagination)
-          setSettledListKey(listKey)
-        }
-      })
-      .catch((failure: unknown) => {
-        if (active) {
-          setListError({
-            key: listKey,
-            message: getApiErrorMessage(failure, 'Unable to load students.'),
-          })
-          setSettledListKey(listKey)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [listKey, page, programFilter, refreshVersion, search, statusFilter])
+    const timer = window.setInterval(() => setClock(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
-    if (!selectedStudent) return
-
+    if (activeTab !== 'activity') return
     let active = true
-    void Promise.resolve()
-      .then(() => fetchStudent(selectedStudent.id))
-      .then((result) => {
-        if (active) {
-          setStudentDetail(result)
-          setDetailError(null)
-        }
-      })
-      .catch((failure: unknown) => {
-        if (active) setDetailError(getApiErrorMessage(failure, 'Unable to load student profile.'))
-      })
-      .finally(() => {
-        if (active) setIsDetailLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [detailVersion, selectedStudent])
 
-  async function handleSave(input: AccountFormSubmission) {
-    if (dialogUser) {
-      const update: UpdateUserInput = {
-        name: input.name,
-        email: input.email,
-        ...(input.password
-          ? {
-              password: input.password,
-              password_confirmation: input.password_confirmation,
-            }
-          : {}),
-        ...(input.profile ? { profile: input.profile } : {}),
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      setIsLoadingLogs(true)
+      setLogsError(null)
+
+      try {
+        const result = await fetchStudentActivityLogs({ page: activityPage, per_page: 25 })
+        if (!active) return
+        setLogs(result.logs)
+        setLogPagination(result.pagination)
+      } catch (failure) {
+        if (active) {
+          setLogsError(getApiErrorMessage(failure, 'Unable to load student activity logs.'))
+        }
+      } finally {
+        if (active) setIsLoadingLogs(false)
       }
-      await updateUser(dialogUser.id, update)
-      setSuccess('Student profile updated.')
-      setDialogUser(undefined)
-      setRefreshVersion((version) => version + 1)
-      setIsDetailLoading(true)
-      setDetailVersion((version) => version + 1)
-      return
-    }
-
-    if (!input.password || !input.password_confirmation) {
-      throw new Error('Enter and confirm a temporary password.')
-    }
-
-    await createUser({
-      ...input,
-      role: 'student',
-      password: input.password,
-      password_confirmation: input.password_confirmation,
     })
-    setSuccess('Student account registered.')
-    setDialogUser(undefined)
-    setPage(1)
+
+    return () => {
+      active = false
+    }
+  }, [activeTab, activityPage, refreshVersion])
+
+  useEffect(() => {
+    if (activeTab !== 'academic') return
+    let active = true
+
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      setIsLoadingHistory(true)
+      setHistoryError(null)
+
+      try {
+        const result = await fetchStudentAcademicHistory({ page: academicPage, per_page: 25 })
+        if (!active) return
+        setHistory(result.records)
+        setHistoryPagination(result.pagination)
+      } catch (failure) {
+        if (active) {
+          setHistoryError(getApiErrorMessage(failure, 'Unable to load student academic history.'))
+        }
+      } finally {
+        if (active) setIsLoadingHistory(false)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [academicPage, activeTab, refreshVersion])
+
+  useEffect(() => {
+    if (activeTab !== 'removed') return
+    let active = true
+
+    void Promise.resolve().then(async () => {
+      if (!active) return
+      setIsLoadingRemoved(true)
+      setRemovedError(null)
+
+      try {
+        const result = await fetchRemovedStudents({ page: removedPage, per_page: 25 })
+        if (!active) return
+        const fetchedAt = Date.now()
+        setRemovedStudents(result.removals)
+        setRemovedPagination(result.pagination)
+        setServerOffset(new Date(result.server_time).getTime() - fetchedAt)
+      } catch (failure) {
+        if (active) {
+          setRemovedError(getApiErrorMessage(failure, 'Unable to load recently removed students.'))
+        }
+      } finally {
+        if (active) setIsLoadingRemoved(false)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [activeTab, refreshVersion, removedPage])
+
+  function refresh() {
     setRefreshVersion((version) => version + 1)
   }
 
-  async function handleStatusChange(student: StudentDirectoryRecord | StudentDetail) {
-    const nextStatus = student.account_status === 'active' ? 'inactive' : 'active'
-    const verb = nextStatus === 'active' ? 'activate' : 'deactivate'
+  async function handleRemove() {
+    if (!confirmRemoval) return
+    const student = confirmRemoval.student
+    setConfirmRemoval(null)
+    setBusyRemoveId(student.id)
+    setSuccess(null)
 
-    setConfirmDialog({
-      title: `${verb.charAt(0).toUpperCase() + verb.slice(1)} student account`,
-      description: `Are you sure you want to ${verb} ${student.name}'s account?`,
-      confirmLabel: `${verb.charAt(0).toUpperCase() + verb.slice(1)} account`,
-      cancelLabel: 'Keep as is',
-      destructive: nextStatus === 'inactive',
-      onConfirm: async () => {
-        setConfirmDialog(null)
-        setBusyStudentId(student.id)
-        setListError(null)
-        setSuccess(null)
+    try {
+      await removeStudent(student.id)
+      setSuccess(`${student.name ?? 'The student'} was removed. The record can be restored for seven days.`)
+      refresh()
+    } catch (failure) {
+      setHistoryError(
+        getApiFieldErrors(failure).student?.[0] ??
+          getApiErrorMessage(failure, 'Unable to remove the student.'),
+      )
+    } finally {
+      setBusyRemoveId(null)
+    }
+  }
 
-        try {
-          await updateUserStatus(student.user_id, nextStatus)
-          setSuccess(`${student.name}'s account was ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`)
-          setRefreshVersion((version) => version + 1)
-          if (selectedStudent) setIsDetailLoading(true)
-          setDetailVersion((version) => version + 1)
-        } catch (statusFailure) {
-          const message = getApiFieldErrors(statusFailure).status?.[0] ??
-            getApiErrorMessage(statusFailure, 'Unable to update student account status.')
-          if (selectedStudent) {
-            setDetailError(message)
-          } else {
-            setListError({ key: listKey, message })
-          }
-        } finally {
-          setBusyStudentId(null)
-        }
-      },
-    })
+  async function handleRestore(removal: RemovedStudentRecord) {
+    setBusyRestoreId(removal.id)
+    setSuccess(null)
+
+    try {
+      await restoreStudent(removal.student.id)
+      setSuccess(`${removal.student.name ?? 'The student'} was restored.`)
+      refresh()
+    } catch (failure) {
+      setRemovedError(
+        getApiFieldErrors(failure).student?.[0] ??
+          getApiErrorMessage(failure, 'Unable to restore the student.'),
+      )
+    } finally {
+      setBusyRestoreId(null)
+    }
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="People directory"
-        title="Student management"
-        description="Review student profiles, program assignments, account access, and enrollment-derived academic information."
-        actions={canRegister ? (
-          <Button
-            onClick={() => {
-              setSuccess(null)
-              setDialogUser(null)
-            }}
-            disabled={!options || Boolean(optionsError)}
-            leftIcon={<Plus className="size-4" aria-hidden="true" />}
-          >
-            Register student
-          </Button>
-        ) : null}
+        eyebrow="Student records"
+        title="Student Logs"
+        description="Monitor student account activity, academic records, and account removal history."
       />
 
       {success ? (
-        <div role="status" className="mb-5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+        <div
+          role="status"
+          className="mb-5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800"
+        >
           <Check className="size-4" aria-hidden="true" />
           {success}
-          <button type="button" className="ml-auto text-xs font-semibold underline" onClick={() => setSuccess(null)}>
+          <button
+            type="button"
+            className="ml-auto text-xs font-semibold underline"
+            onClick={() => setSuccess(null)}
+          >
             Dismiss
           </button>
         </div>
       ) : null}
 
-      {optionsError ? (
-        <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <p>{optionsError}</p>
-          <Button
-            className="mt-3"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setOptionsError(null)
-              setOptionsVersion((version) => version + 1)
-            }}
-          >
-            Retry options
-          </Button>
-        </div>
-      ) : null}
-
       <Card>
-        <CardBody>
-          <form
-            className="grid gap-3 md:grid-cols-[minmax(14rem,1fr)_12rem_12rem_auto]"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setPage(1)
-              setSearch(searchInput.trim())
-              setSuccess(null)
-            }}
-          >
-            <TextField
-              label="Search students"
-              name="search"
-              type="search"
-              value={searchInput}
-              placeholder="Student number, name, or email"
-              onChange={(event) => setSearchInput(event.target.value)}
-            />
-            <div className="space-y-1.5">
-              <label htmlFor="student-program-filter" className="block text-sm font-medium text-ink">
-                Program
-              </label>
-              <select
-                id="student-program-filter"
-                value={programFilter}
-                onChange={(event) => {
-                  setPage(1)
-                  setProgramFilter(event.target.value)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All programs</option>
-                {(options?.programs ?? []).map((program) => (
-                  <option key={program.id} value={program.id}>{program.code} — {program.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="student-status-filter" className="block text-sm font-medium text-ink">
-                Account status
-              </label>
-              <select
-                id="student-status-filter"
-                value={statusFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || isAccountStatus(value)) setStatusFilter(value)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All statuses</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button type="submit" variant="outline" className="w-full md:w-auto">
-                <Search className="size-4" aria-hidden="true" />
-                Search
-              </Button>
-            </div>
-          </form>
-
-          {error ? (
-            <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              <p>{error}</p>
-              <Button className="mt-3" size="sm" variant="outline" onClick={() => setRefreshVersion((version) => version + 1)}>
-                Retry
-              </Button>
-            </div>
-          ) : isLoading ? (
-            <div className="py-16 text-center text-sm text-ink-muted" role="status">
-              Loading students…
-            </div>
-          ) : students.length === 0 ? (
-            <div className="mt-5">
-              <EmptyState
-                icon={UserRound}
-                title="No students found"
-                description={search || statusFilter || programFilter
-                  ? 'Try adjusting the search or filters.'
-                  : 'Student profiles will appear here after they are registered.'}
-                action={canRegister ? (
-                  <Button onClick={() => setDialogUser(null)} leftIcon={<Plus className="size-4" aria-hidden="true" />}>
-                    Register student
-                  </Button>
-                ) : undefined}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                    <tr>
-                      <th className="px-4 py-3">Student</th>
-                      <th className="px-4 py-3">Program</th>
-                      <th className="px-4 py-3">Placement</th>
-                      <th className="px-4 py-3">Account status</th>
-                      <th className="px-4 py-3">Profile status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {students.map((student) => (
-                      <tr key={student.id} className="align-top">
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-ink">{student.name}</p>
-                          <p className="mt-0.5 text-xs text-ink-muted">{student.student_number} · {student.email}</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {student.program ? (
-                            <>
-                              <p>{student.program.code}</p>
-                              <p className="mt-1 text-xs">{student.program.name}</p>
-                            </>
-                          ) : '—'}
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {student.current_placement ? (
-                            <>
-                              <p className="text-ink">
-                                {student.current_placement.year_level?.name ?? '—'}
-                                {student.current_placement.major ? ` · ${student.current_placement.major.code}` : ''}
-                              </p>
-                              <p className="mt-1 text-xs">
-                                {student.current_placement.academic_year?.label ?? 'No academic year'}
-                                {student.current_placement.section ? ` · ${student.current_placement.section.code}` : ' · No section'}
-                              </p>
-                            </>
-                          ) : 'No placement'}
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge tone={accountStatusTone(student.account_status)}>{student.account_status}</Badge>
-                        </td>
-                        <td className="px-4 py-4 text-sm capitalize text-ink-muted">{student.profile_status}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setStudentDetail(null)
-                                setDetailError(null)
-                                setIsDetailLoading(true)
-                                setSelectedStudent(student)
-                              }}
-                            >
-                              Details
-                            </Button>
-                            {canManage ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={student.account_status === 'active' ? 'danger' : 'secondary'}
-                                disabled={busyStudentId === student.id}
-                                onClick={() => void handleStatusChange(student)}
-                              >
-                                {busyStudentId === student.id
-                                  ? 'Saving…'
-                                  : student.account_status === 'active'
-                                    ? 'Deactivate'
-                                    : 'Activate'}
-                              </Button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-ink-muted">
-                  {pagination.total} student{pagination.total === 1 ? '' : 's'} · Page {page} of {pagination.last_page}
-                </p>
-                <div className="flex gap-2">
-                  <Button
+        <CardBody className="p-0">
+          <div className="border-b border-line px-5 pt-3">
+            <nav className="-mb-px flex gap-1 overflow-x-auto" aria-label="Student logs sections">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                const isActive = activeTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
                     type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={page <= 1}
-                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    onClick={() => setActiveTab(tab.key)}
+                    aria-selected={isActive}
+                    role="tab"
+                    className={`inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'border-maroon-600 text-maroon-700'
+                        : 'border-transparent text-ink-muted hover:border-maroon-200 hover:text-ink'
+                    }`}
                   >
-                    <ChevronLeft className="size-4" aria-hidden="true" />
-                    Previous
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={page >= pagination.last_page}
-                    onClick={() => setPage((current) => Math.min(pagination.last_page, current + 1))}
-                  >
-                    Next
-                    <ChevronRight className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
+                    <Icon className="size-4" aria-hidden="true" />
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </nav>
+          </div>
+
+          <div className="p-5">
+            {activeTab === 'activity' ? (
+              <>
+                {logsError ? (
+                  <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p>{logsError}</p>
+                    <Button className="mt-3" size="sm" variant="outline" onClick={refresh}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : isLoadingLogs ? (
+                  <div role="status" className="py-16 text-center text-sm text-ink-muted">
+                    Loading activity logs…
+                  </div>
+                ) : logs.length === 0 ? (
+                  <EmptyState
+                    icon={Activity}
+                    title="No activity recorded yet"
+                    description="Student account, profile, placement, removal, and restoration events will appear here as they occur."
+                  />
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-line">
+                      <table className="w-full min-w-[900px] text-left text-sm">
+                        <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                          <tr>
+                            <th className="px-4 py-3">Event</th>
+                            <th className="px-4 py-3">Student</th>
+                            <th className="px-4 py-3">Details</th>
+                            <th className="px-4 py-3">Performed by</th>
+                            <th className="px-4 py-3">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {logs.map((log) => (
+                            <tr key={log.id} className="align-top">
+                              <td className="px-4 py-4">
+                                <Badge tone={actionTone(log.action)}>{actionLabel(log.action)}</Badge>
+                              </td>
+                              <td className="px-4 py-4">
+                                <p className="font-semibold text-ink">{log.student.name ?? 'Removed student'}</p>
+                                <p className="mt-0.5 text-xs text-ink-muted">{log.student.student_number}</p>
+                              </td>
+                              <td className="max-w-md px-4 py-4 text-ink-muted">
+                                {log.description ?? 'No additional details recorded.'}
+                              </td>
+                              <td className="px-4 py-4 text-ink-muted">
+                                {log.actor?.name ?? 'System'}
+                              </td>
+                              <td className="px-4 py-4 text-ink-muted">
+                                {formatDateTime(log.created_at)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <PaginationBar
+                      pagination={logPagination}
+                      page={activityPage}
+                      noun="activity record"
+                      onPageChange={setActivityPage}
+                    />
+                  </>
+                )}
+              </>
+            ) : null}
+
+            {activeTab === 'academic' ? (
+              <>
+                {historyError ? (
+                  <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p>{historyError}</p>
+                    <Button className="mt-3" size="sm" variant="outline" onClick={refresh}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : isLoadingHistory ? (
+                  <div role="status" className="py-16 text-center text-sm text-ink-muted">
+                    Loading academic history…
+                  </div>
+                ) : history.length === 0 ? (
+                  <EmptyState
+                    icon={History}
+                    title="No academic history found"
+                    description="Student placement records will appear here once they are assigned."
+                  />
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-line">
+                      <table className="w-full min-w-[1080px] text-left text-sm">
+                        <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                          <tr>
+                            <th className="px-4 py-3">Student</th>
+                            <th className="px-4 py-3">Academic year / term</th>
+                            <th className="px-4 py-3">Program / level</th>
+                            <th className="px-4 py-3">Major / section</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {history.map((record) => (
+                            <tr key={record.id} className="align-top">
+                              <td className="px-4 py-4">
+                                <p className="font-semibold text-ink">{record.student.name ?? 'Removed student'}</p>
+                                <p className="mt-0.5 text-xs text-ink-muted">{record.student.student_number}</p>
+                              </td>
+                              <td className="px-4 py-4 text-ink-muted">
+                                <p className="text-ink">{record.academic_year?.label ?? '—'}</p>
+                                <p className="mt-0.5 text-xs">{record.academic_term?.name ?? '—'}</p>
+                              </td>
+                              <td className="px-4 py-4 text-ink-muted">
+                                <p className="text-ink">{record.program?.code ?? '—'}</p>
+                                <p className="mt-0.5 text-xs">{record.year_level?.name ?? 'No year level'}</p>
+                              </td>
+                              <td className="px-4 py-4 text-ink-muted">
+                                <p className="text-ink">{record.major ? `${record.major.code} · ${record.major.name}` : 'No major'}</p>
+                                <p className="mt-0.5 text-xs">{record.section?.code ?? 'Unassigned'}</p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <Badge tone={record.is_current ? 'success' : 'neutral'}>
+                                  {record.is_current ? 'current' : record.status}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex justify-end">
+                                  {canManage &&
+                                  record.is_current &&
+                                  record.student.status !== 'deleted' &&
+                                  !record.removal_pending ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="danger"
+                                      disabled={busyRemoveId === record.student.id}
+                                      onClick={() => {
+                                        setSuccess(null)
+                                        setConfirmRemoval(record)
+                                      }}
+                                      leftIcon={<Trash2 className="size-4" aria-hidden="true" />}
+                                    >
+                                      {busyRemoveId === record.student.id ? 'Removing…' : 'Remove Student'}
+                                    </Button>
+                                  ) : record.removal_pending ? (
+                                    <Badge tone="danger">Pending deletion</Badge>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <PaginationBar
+                      pagination={historyPagination}
+                      page={academicPage}
+                      noun="academic record"
+                      onPageChange={setAcademicPage}
+                    />
+                  </>
+                )}
+              </>
+            ) : null}
+
+            {activeTab === 'removed' ? (
+              <>
+                {removedError ? (
+                  <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    <p>{removedError}</p>
+                    <Button className="mt-3" size="sm" variant="outline" onClick={refresh}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : isLoadingRemoved ? (
+                  <div role="status" className="py-16 text-center text-sm text-ink-muted">
+                    Loading recently removed students…
+                  </div>
+                ) : removedStudents.length === 0 ? (
+                  <EmptyState
+                    icon={UserRound}
+                    title="No students pending removal"
+                    description="Removed student accounts will appear here during their seven-day recovery period."
+                  />
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-line">
+                      <table className="w-full min-w-[1040px] text-left text-sm">
+                        <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                          <tr>
+                            <th className="px-4 py-3">Student</th>
+                            <th className="px-4 py-3">Removed on</th>
+                            <th className="px-4 py-3">Permanent deletion deadline</th>
+                            <th className="px-4 py-3">Remaining</th>
+                            <th className="px-4 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {removedStudents.map((removal) => {
+                            const deadline = removal.restore_deadline
+                              ? new Date(removal.restore_deadline).getTime()
+                              : null
+                            const remainingMs = deadline === null ? 0 : Math.max(0, deadline - currentTime)
+                            const isExpired = remainingMs <= 0
+                            const isWarning = !isExpired && remainingMs < 24 * 60 * 60 * 1000
+
+                            return (
+                              <tr key={removal.id} className="align-top">
+                                <td className="px-4 py-4">
+                                  <p className="font-semibold text-ink">{removal.student.name ?? 'Removed student'}</p>
+                                  <p className="mt-0.5 text-xs text-ink-muted">{removal.student.student_number}</p>
+                                  <div className="mt-2">
+                                    <Badge tone="danger">Pending deletion</Badge>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4 text-ink-muted">
+                                  <p>{formatDateTime(removal.removed_at)}</p>
+                                  <p className="mt-1 text-xs">
+                                    by {removal.removed_by?.name ?? 'System'}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-4 text-ink-muted">
+                                  {formatDateTime(removal.restore_deadline)}
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div
+                                    className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
+                                      isWarning
+                                        ? 'border-red-200 bg-red-50 text-red-700'
+                                        : 'border-amber-200 bg-amber-50 text-amber-800'
+                                    }`}
+                                  >
+                                    <Clock3 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                                    <p className="font-mono text-xs font-semibold leading-5">
+                                      {formatCountdown(remainingMs)}
+                                    </p>
+                                  </div>
+                                  {isWarning ? (
+                                    <p className="mt-2 text-xs font-medium text-red-700">
+                                      Less than 24 hours remain to restore this student.
+                                    </p>
+                                  ) : null}
+                                </td>
+                                <td className="px-4 py-4">
+                                  <div className="flex justify-end">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={isExpired || busyRestoreId === removal.id}
+                                      onClick={() => void handleRestore(removal)}
+                                      leftIcon={<RotateCcw className="size-4" aria-hidden="true" />}
+                                    >
+                                      {busyRestoreId === removal.id
+                                        ? 'Restoring…'
+                                        : isExpired
+                                          ? 'Recovery expired'
+                                          : 'Restore Student'}
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <PaginationBar
+                      pagination={removedPagination}
+                      page={removedPage}
+                      noun="removed student"
+                      onPageChange={setRemovedPage}
+                    />
+                  </>
+                )}
+              </>
+            ) : null}
+          </div>
         </CardBody>
       </Card>
 
-      {selectedStudent && dialogUser === undefined ? (
-        <StudentProfileDialog
-          student={studentDetail}
-          isLoading={isDetailLoading}
-          error={detailError}
-          canManage={canManage}
-          isChangingStatus={busyStudentId === selectedStudent.id}
-          onClose={() => {
-            setSelectedStudent(null)
-            setStudentDetail(null)
-          }}
-          onEdit={() => {
-            if (studentDetail) setDialogUser(toManagedUser(studentDetail))
-          }}
-          onToggleStatus={() => {
-            if (studentDetail) void handleStatusChange(studentDetail)
-          }}
-          onRetry={() => {
-            setDetailError(null)
-            setIsDetailLoading(true)
-            setDetailVersion((version) => version + 1)
-          }}
-        />
-      ) : null}
-
-      {dialogUser !== undefined && options ? (
-        <UserFormDialog
-          key={dialogUser?.id ?? 'new-student'}
-          user={dialogUser}
-          roles={options.roles}
-          programs={options.programs}
-          defaultRole="student"
-          lockRole
-          onCancel={() => setDialogUser(undefined)}
-          onSubmit={handleSave}
-        />
-      ) : null}
-
-      {confirmDialog && (
+      {confirmRemoval ? (
         <ConfirmationDialog
-          onClose={() => setConfirmDialog(null)}
-          title={confirmDialog.title}
-          description={confirmDialog.description}
-          confirmLabel={confirmDialog.confirmLabel}
-          cancelLabel={confirmDialog.cancelLabel}
-          destructive={confirmDialog.destructive}
-          isLoading={Boolean(busyStudentId)}
-          onConfirm={confirmDialog.onConfirm}
+          onClose={() => setConfirmRemoval(null)}
+          title="Remove this student from CCSync?"
+          description="The student will immediately lose access to their account. Their record will remain recoverable for seven days. After the recovery period expires, permanent deletion will be processed and cannot be undone."
+          confirmLabel="Remove student"
+          cancelLabel="Cancel"
+          destructive
+          isLoading={busyRemoveId !== null}
+          onConfirm={handleRemove}
         />
-      )}
+      ) : null}
     </>
   )
 }
