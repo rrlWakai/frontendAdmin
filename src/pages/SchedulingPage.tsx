@@ -7,11 +7,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Plus,
   RefreshCw,
   Search,
   SlidersHorizontal,
-  Sparkles,
   X,
 } from 'lucide-react'
 import { Badge } from '@/components/common/Badge'
@@ -27,7 +25,6 @@ import {
   cancelSchedule,
   cancelScheduleAssignment,
   createFacultyAssignment,
-  createSchedule,
   fetchOfferingFacultyAssignments,
   previewScheduleConflicts,
   fetchScheduleConflicts,
@@ -124,7 +121,6 @@ function formatDay(day: number): string {
 }
 
 export function SchedulingPage() {
-  const [workspaceMode, setWorkspaceMode] = useState<'manual' | 'ai'>('ai')
   const [terms, setTerms] = useState<AcademicTerm[]>([])
   const [termId, setTermId] = useState<number | null>(null)
   const [options, setOptions] = useState<SchedulingOptions | null>(null)
@@ -146,19 +142,11 @@ export function SchedulingPage() {
   const [overviewDay, setOverviewDay] = useState(getTodayValue)
   const [selected, setSelected] = useState<ScheduleRecord | null>(null)
   const [assignments, setAssignments] = useState<FacultyAssignmentOption[]>([])
-  const [createOpen, setCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [newSchedule, setNewSchedule] = useState<ScheduleInput>({
-    subject_offering_id: 0,
-    day_of_week: 1,
-    start_time: '08:00',
-    end_time: '09:00',
-    schedule_type: 'lecture',
-    modality: 'face_to_face',
-  })
   const [editSchedule, setEditSchedule] = useState<Partial<Omit<ScheduleInput, 'subject_offering_id'>>>({})
   const [facultyId, setFacultyId] = useState('')
   const [professorId, setProfessorId] = useState('')
@@ -195,7 +183,7 @@ export function SchedulingPage() {
       })
       .catch((loadError: unknown) => {
         if (!active) return
-        setError(getErrorMessage(loadError))
+        setLoadError(getErrorMessage(loadError))
         setLoading(false)
       })
 
@@ -208,7 +196,7 @@ export function SchedulingPage() {
     if (!termId) return
 
     setLoading(true)
-    if (!preserveError) setError(null)
+    if (!preserveError) setLoadError(null)
     try {
       const [nextOptions, directory, conflictDirectory] = await Promise.all([
         fetchSchedulingOptions(termId),
@@ -233,7 +221,7 @@ export function SchedulingPage() {
       setConflicts(conflictDirectory.conflicts)
       setSelected((current) => directory.schedules.find((schedule) => schedule.id === current?.id) ?? current)
     } catch (loadError) {
-      setError(getErrorMessage(loadError))
+      setLoadError(getErrorMessage(loadError))
     } finally {
       setLoading(false)
     }
@@ -256,7 +244,7 @@ export function SchedulingPage() {
         if (active) setAssignments(records)
       })
       .catch((loadError: unknown) => {
-        if (active) setError(getErrorMessage(loadError))
+        if (active) setActionError(getErrorMessage(loadError))
       })
 
     return () => {
@@ -329,43 +317,21 @@ export function SchedulingPage() {
 
   async function performAction(action: () => Promise<unknown>, message: string) {
     setSaving(true)
-    setError(null)
+    setActionError(null)
     setNotice(null)
     try {
       await action()
       setNotice(message)
       await loadDirectory()
-    } catch (actionError) {
-      const message = getErrorMessage(actionError)
-      if (isAxiosError(actionError) && actionError.response?.status === 422) {
+    } catch (failure) {
+      const message = getErrorMessage(failure)
+      if (isAxiosError(failure) && failure.response?.status === 422) {
         await loadDirectory(true)
       }
-      setError(message)
+      setActionError(message)
     } finally {
       setSaving(false)
     }
-  }
-
-  async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!newSchedule.subject_offering_id) {
-      setError('Choose a subject offering before creating a schedule.')
-      return
-    }
-    await performAction(async () => {
-      const created = await createSchedule(newSchedule)
-      setSelected(created)
-      setEditSchedule({
-        day_of_week: created.day_of_week,
-        start_time: created.start_time,
-        end_time: created.end_time,
-        schedule_type: created.schedule_type,
-        modality: created.modality,
-      })
-      setFacultyId('')
-      setRoomId('')
-      setCreateOpen(false)
-    }, 'Draft schedule created.')
   }
 
   async function handleEdit(event: React.FormEvent<HTMLFormElement>) {
@@ -450,7 +416,7 @@ export function SchedulingPage() {
       <PageHeader
         eyebrow="Schedule"
         title="Intelligent Scheduling"
-        description="Prepare, generate, review, and publish class schedules for the selected academic term."
+        description="Generate, review, edit, and publish class schedules for the selected academic term."
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
             <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
@@ -462,7 +428,8 @@ export function SchedulingPage() {
                   setPage(1)
                   setSelected(null)
                   setConflictPreview([])
-                  setNewSchedule((current) => ({ ...current, subject_offering_id: 0 }))
+                  setActionError(null)
+                  setNotice(null)
                 }}
                 className="mt-1.5 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium text-ink transition focus:border-maroon-500 focus:outline-none focus:ring-2 focus:ring-maroon-500/15"
               >
@@ -491,96 +458,39 @@ export function SchedulingPage() {
         )}
       />
 
-      <div className="mb-5 flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex w-fit rounded-xl border border-line bg-surface-soft p-1" role="tablist" aria-label="Scheduling workspace">
-          <button
-            type="button"
-            role="tab"
-            id="intelligent-scheduling-tab"
-            aria-selected={workspaceMode === 'ai'}
-            aria-controls="intelligent-scheduling-panel"
-            onClick={() => {
-              setWorkspaceMode('ai')
-              setCreateOpen(false)
-              setError(null)
-              setNotice(null)
-            }}
-            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'ai' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-          >
-            <Sparkles className="size-4" aria-hidden="true" />
-            Intelligent scheduling
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="manual-scheduling-tab"
-            aria-selected={workspaceMode === 'manual'}
-            aria-controls="manual-scheduling-panel"
-            onClick={() => {
-              setWorkspaceMode('manual')
-              setError(null)
-            }}
-            className={`flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${workspaceMode === 'manual' ? 'bg-white text-maroon-800 shadow-sm' : 'text-ink-muted hover:text-ink'}`}
-          >
-            <CalendarDays className="size-4" aria-hidden="true" />
-            Manual schedules
-          </button>
-        </div>
-        {workspaceMode === 'manual' ? (
-          <Button
-            onClick={() => {
-              setError(null)
-              setCreateOpen((open) => !open)
-            }}
-            leftIcon={<Plus className="size-4" aria-hidden="true" />}
-            disabled={!termId || !options?.offerings.length}
-          >
-            Create draft
-          </Button>
-        ) : null}
-      </div>
-
-      {workspaceMode === 'manual' && error ? (
+      {actionError ? (
         <div role="alert" className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <p>{error}</p>
+          <p>{actionError}</p>
         </div>
       ) : null}
-      {workspaceMode === 'manual' && notice ? (
+      {notice ? (
         <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <Check className="size-4" aria-hidden="true" />
           {notice}
         </div>
       ) : null}
 
-      <div
-        id="intelligent-scheduling-panel"
-        role="tabpanel"
-        aria-labelledby="intelligent-scheduling-tab"
-        hidden={workspaceMode !== 'ai'}
-      >
-        {workspaceMode === 'ai' ? (
-          <Suspense fallback={<div role="status" className="flex items-center gap-2 rounded-xl border border-line bg-white px-5 py-8 text-sm text-ink-muted"><RefreshCw className="size-4 animate-spin" aria-hidden="true" />Loading intelligent scheduling workspace…</div>}>
-            <IntelligentScheduleWorkspace
-              key={termId ?? 'no-term'}
-              termId={termId}
-              term={terms.find((item) => item.id === termId)}
-              options={options}
-              optionsLoading={loading}
-              loadError={workspaceMode === 'ai' ? error : null}
-              conflicts={conflicts}
-            />
-          </Suspense>
-        ) : null}
-      </div>
-      <div
-        id="manual-scheduling-panel"
-        role="tabpanel"
-        aria-labelledby="manual-scheduling-tab"
-        hidden={workspaceMode !== 'manual'}
-      >
-      {workspaceMode === 'manual' ? (
-      <>
+      <Suspense fallback={<div role="status" className="flex items-center gap-2 rounded-xl border border-line bg-white px-5 py-8 text-sm text-ink-muted"><RefreshCw className="size-4 animate-spin" aria-hidden="true" />Loading intelligent scheduling workspace…</div>}>
+        <IntelligentScheduleWorkspace
+          key={termId ?? 'no-term'}
+          termId={termId}
+          term={terms.find((item) => item.id === termId)}
+          options={options}
+          optionsLoading={loading}
+          loadError={loadError}
+          conflicts={conflicts}
+        />
+      </Suspense>
+
+      <section className="mb-4 mt-8" aria-labelledby="timetable-review-heading">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-600">Review and publish</p>
+        <h2 id="timetable-review-heading" className="mt-1 text-lg font-semibold text-ink">Timetable records</h2>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-muted">
+          Review generated draft candidates, adjust class days, times, rooms, and authorized faculty assignments, then validate and publish them. New timetable candidates come from Intelligent Scheduling.
+        </p>
+      </section>
+
       <section className="mb-5 rounded-xl border border-line bg-white" aria-label="Schedule filters">
         <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-end">
           <label className="block w-full flex-1 text-xs font-semibold text-ink-muted">
@@ -687,70 +597,6 @@ export function SchedulingPage() {
           </div>
         ) : null}
       </section>
-
-      {createOpen ? (
-        <Card className="mb-5">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-ink">Create draft schedule</h3>
-              <p className="mt-1 text-xs text-ink-muted">Instructor and room assignments can be added after saving the draft.</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setCreateOpen(false)} aria-label="Close form">
-              <X className="size-4" aria-hidden="true" />
-            </Button>
-          </CardHeader>
-          <CardBody>
-            <form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-xs font-semibold text-ink-muted sm:col-span-2">
-                Subject offering
-                <select required value={newSchedule.subject_offering_id || ''} onChange={(event) => setNewSchedule({ ...newSchedule, subject_offering_id: Number(event.target.value) })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
-                  <option value="">Choose an offering</option>
-                  {options?.offerings.map((offering) => (
-                    <option key={offering.id} value={offering.id}>
-                      {offering.subject.code} — {offering.subject.title} · {offering.section.code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-ink-muted">
-                Day
-                <select value={newSchedule.day_of_week} onChange={(event) => setNewSchedule({ ...newSchedule, day_of_week: Number(event.target.value) })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
-                  {days.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-ink-muted">
-                Type
-                <select value={newSchedule.schedule_type} onChange={(event) => setNewSchedule({ ...newSchedule, schedule_type: event.target.value as ScheduleInput['schedule_type'] })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
-                  <option value="lecture">Lecture</option>
-                  <option value="laboratory">Laboratory</option>
-                  <option value="seminar">Seminar</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-ink-muted">
-                Start time
-                <input required type="time" value={newSchedule.start_time} onChange={(event) => setNewSchedule({ ...newSchedule, start_time: event.target.value })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink" />
-              </label>
-              <label className="text-xs font-semibold text-ink-muted">
-                End time
-                <input required type="time" value={newSchedule.end_time} onChange={(event) => setNewSchedule({ ...newSchedule, end_time: event.target.value })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink" />
-              </label>
-              <label className="text-xs font-semibold text-ink-muted">
-                Modality
-                <select value={newSchedule.modality} onChange={(event) => setNewSchedule({ ...newSchedule, modality: event.target.value as ScheduleInput['modality'] })} className="mt-1.5 h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
-                  <option value="face_to_face">Face-to-face</option>
-                  <option value="online">Online</option>
-                  <option value="hybrid">Hybrid</option>
-                </select>
-              </label>
-              <div className="flex items-end gap-2">
-                <Button type="submit" isLoading={saving}>Save draft</Button>
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              </div>
-            </form>
-          </CardBody>
-        </Card>
-      ) : null}
 
       <section className="mb-5 overflow-hidden rounded-xl border border-line bg-white" aria-labelledby="weekly-overview-heading">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-5">
@@ -932,8 +778,7 @@ export function SchedulingPage() {
           <EmptyState
             icon={CalendarDays}
             title="No schedules found"
-            description="Create a draft schedule from an open subject offering, or adjust the search and filters."
-            action={<Button onClick={() => setCreateOpen(true)} disabled={!options?.offerings.length} leftIcon={<Plus className="size-4" aria-hidden="true" />}>Create schedule</Button>}
+            description="Generate a timetable candidate from Intelligent Scheduling, or adjust the search and filters."
           />
         ) : (
           <>
@@ -1236,9 +1081,6 @@ export function SchedulingPage() {
           onConfirm={confirmDialog.onConfirm}
         />
       )}
-      </>
-      ) : null}
-      </div>
     </div>
   )
 }
