@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { BookOpenCheck, Check, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { BookOpenCheck, Check, ChevronLeft, ChevronRight, Filter, Plus } from 'lucide-react'
+import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
@@ -7,9 +8,17 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { TextField } from '@/components/common/TextField'
 import { SubjectOfferingDetailsDialog } from '@/components/subjectOfferings/SubjectOfferingDetailsDialog'
-import { SubjectOfferingFormDialog } from '@/components/subjectOfferings/SubjectOfferingFormDialog'
+import {
+  SubjectOfferingFormDialog,
+  type SubjectOfferingFormSubmission,
+} from '@/components/subjectOfferings/SubjectOfferingFormDialog'
 import { SubjectOfferingStatusBadge } from '@/components/subjectOfferings/SubjectOfferingStatusBadge'
 import { useAuth } from '@/hooks/useAuth'
+import {
+  createFacultyAssignment,
+  fetchSchedulingReadiness,
+  updateFacultyAssignmentStatus,
+} from '@/services/api/scheduling'
 import {
   createSubjectOffering,
   fetchSubjectOffering,
@@ -18,30 +27,43 @@ import {
   updateSubjectOffering,
   updateSubjectOfferingStatus,
 } from '@/services/api/subjectOfferings'
+import type { SchedulingReadiness, SchedulingReadinessIssue } from '@/types/scheduling'
 import type {
   SubjectOffering,
+  SubjectOfferingAssignmentFilter,
   SubjectOfferingDetail,
   SubjectOfferingInput,
   SubjectOfferingOptions,
   SubjectOfferingPagination,
-  SubjectOfferingStatus,
-  SubjectOfferingUpdateInput,
+  SubjectOfferingSummary,
+  SubjectOfferingYearLevel,
 } from '@/types/subjectOffering'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
-const statusOptions: Array<{ value: SubjectOfferingStatus; label: string }> = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'open', label: 'Open' },
-  { value: 'closed', label: 'Closed' },
-  { value: 'cancelled', label: 'Cancelled' },
-]
+type StatusTone = 'success' | 'warning' | 'neutral' | 'danger'
+
+interface StatusMeta {
+  label: string
+  tone: StatusTone
+  title?: string
+}
 
 const emptyOptions: SubjectOfferingOptions = {
   terms: [],
   programs: [],
   sections: [],
   subjects: [],
+  professors: [],
 }
+
+const emptyPagination: SubjectOfferingPagination = {
+  current_page: 1,
+  last_page: 1,
+  per_page: 25,
+  total: 0,
+}
+
+const selectClass = 'h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20'
 
 function canEditOffering(offering: SubjectOffering): boolean {
   return offering.status === 'draft' || offering.status === 'open'
@@ -60,31 +82,36 @@ function statusActionLabel(offering: SubjectOffering): string {
   return ''
 }
 
+function uniqueYearLevels(sections: SubjectOfferingOptions['sections']): SubjectOfferingYearLevel[] {
+  return Array.from(
+    new Map(sections.map((section) => [section.year_level_id, section.year_level])).values(),
+  ).filter((yearLevel): yearLevel is SubjectOfferingYearLevel => Boolean(yearLevel))
+}
+
 export function SubjectOfferingsPage() {
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
   const [offerings, setOfferings] = useState<SubjectOffering[]>([])
-  const [pagination, setPagination] = useState<SubjectOfferingPagination>({
-    current_page: 1,
-    last_page: 1,
-    per_page: 25,
-    total: 0,
-  })
+  const [pagination, setPagination] = useState<SubjectOfferingPagination>(emptyPagination)
+  const [summary, setSummary] = useState<SubjectOfferingSummary | null>(null)
   const [options, setOptions] = useState<SubjectOfferingOptions>(emptyOptions)
   const [isOptionsLoading, setIsOptionsLoading] = useState(true)
   const [optionsError, setOptionsError] = useState<string | null>(null)
   const [optionsVersion, setOptionsVersion] = useState(0)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<SubjectOfferingStatus | ''>('')
+  const [assignmentFilter, setAssignmentFilter] = useState<SubjectOfferingAssignmentFilter | ''>('')
   const [termFilter, setTermFilter] = useState('')
   const [programFilter, setProgramFilter] = useState('')
+  const [yearLevelFilter, setYearLevelFilter] = useState('')
   const [sectionFilter, setSectionFilter] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
   const [dialogOffering, setDialogOffering] = useState<SubjectOffering | null | undefined>(undefined)
   const [selectedOfferingId, setSelectedOfferingId] = useState<number | null>(null)
   const [detailsOffering, setDetailsOffering] = useState<SubjectOfferingDetail | null>(null)
@@ -93,6 +120,10 @@ export function SubjectOfferingsPage() {
   const [busyOfferingId, setBusyOfferingId] = useState<number | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [detailVersion, setDetailVersion] = useState(0)
+  const [readiness, setReadiness] = useState<SchedulingReadiness | null>(null)
+  const [readinessError, setReadinessError] = useState<string | null>(null)
+  const [isReadinessLoading, setIsReadinessLoading] = useState(false)
+  const [readinessVersion, setReadinessVersion] = useState(0)
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string
     description?: string
@@ -101,6 +132,12 @@ export function SubjectOfferingsPage() {
     destructive: boolean
     onConfirm: () => void | Promise<void>
   } | null>(null)
+
+  const selectedTerm = options.terms.find((term) => String(term.id) === termFilter)
+  const canCreate = canManage
+    && Boolean(selectedTerm)
+    && selectedTerm?.status !== 'archived'
+    && !isOptionsLoading
 
   useEffect(() => {
     let active = true
@@ -122,6 +159,31 @@ export function SubjectOfferingsPage() {
   }, [optionsVersion])
 
   useEffect(() => {
+    if (termFilter || options.terms.length === 0) return
+
+    const defaultTerm = options.terms.find((term) => term.is_current) ?? options.terms[0]
+    setTermFilter(String(defaultTerm.id))
+    setIsLoading(true)
+  }, [options.terms, termFilter])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }, 300)
+
+    return () => window.clearTimeout(timeout)
+  }, [searchInput])
+
+  useEffect(() => {
+    if (!termFilter) {
+      setOfferings([])
+      setPagination(emptyPagination)
+      setSummary(null)
+      setIsLoading(false)
+      return
+    }
+
     let active = true
     void Promise.resolve().then(async () => {
       setIsLoading(true)
@@ -129,9 +191,10 @@ export function SubjectOfferingsPage() {
       try {
         const result = await fetchSubjectOfferings({
           search: search || undefined,
-          status: statusFilter || undefined,
-          academic_term_id: termFilter ? Number(termFilter) : undefined,
+          assignment_status: assignmentFilter || undefined,
+          academic_term_id: Number(termFilter),
           program_id: programFilter ? Number(programFilter) : undefined,
+          year_level_id: yearLevelFilter ? Number(yearLevelFilter) : undefined,
           section_id: sectionFilter ? Number(sectionFilter) : undefined,
           subject_id: subjectFilter ? Number(subjectFilter) : undefined,
           page,
@@ -140,9 +203,10 @@ export function SubjectOfferingsPage() {
         if (active) {
           setOfferings(result.offerings)
           setPagination(result.pagination)
+          setSummary(result.summary)
         }
       } catch (failure) {
-        if (active) setError(getApiErrorMessage(failure, 'Unable to load subject offerings.'))
+        if (active) setError(getApiErrorMessage(failure, 'Unable to load class assignments.'))
       } finally {
         if (active) setIsLoading(false)
       }
@@ -150,7 +214,36 @@ export function SubjectOfferingsPage() {
     return () => {
       active = false
     }
-  }, [page, programFilter, refreshVersion, search, sectionFilter, statusFilter, subjectFilter, termFilter])
+  }, [assignmentFilter, page, programFilter, refreshVersion, search, sectionFilter, subjectFilter, termFilter, yearLevelFilter])
+
+  useEffect(() => {
+    if (!termFilter) {
+      setReadiness(null)
+      setReadinessError(null)
+      setIsReadinessLoading(false)
+      return
+    }
+
+    let active = true
+    void Promise.resolve().then(async () => {
+      setIsReadinessLoading(true)
+      setReadinessError(null)
+      try {
+        const result = await fetchSchedulingReadiness(Number(termFilter))
+        if (active) setReadiness(result)
+      } catch (failure) {
+        if (active) {
+          setReadiness(null)
+          setReadinessError(getApiErrorMessage(failure, 'Unable to load scheduling readiness.'))
+        }
+      } finally {
+        if (active) setIsReadinessLoading(false)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [readinessVersion, termFilter])
 
   useEffect(() => {
     if (selectedOfferingId === null) return
@@ -164,7 +257,7 @@ export function SubjectOfferingsPage() {
           setDetailError(null)
         }
       } catch (failure) {
-        if (active) setDetailError(getApiErrorMessage(failure, 'Unable to load offering details.'))
+        if (active) setDetailError(getApiErrorMessage(failure, 'Unable to load class assignment details.'))
       } finally {
         if (active) setIsDetailLoading(false)
       }
@@ -174,10 +267,124 @@ export function SubjectOfferingsPage() {
     }
   }, [detailVersion, selectedOfferingId])
 
-  const filteredSectionOptions = options.sections.filter((section) => (
-    (!termFilter || section.academic_term_id === Number(termFilter))
-    && (!programFilter || section.program_id === Number(programFilter))
+  const termSections = options.sections.filter((section) => section.academic_term_id === Number(termFilter))
+  const programYearLevels = uniqueYearLevels(
+    termSections.filter((section) => !programFilter || section.program_id === Number(programFilter)),
+  )
+  const filteredSectionOptions = termSections.filter((section) => (
+    (!programFilter || section.program_id === Number(programFilter))
+    && (!yearLevelFilter || section.year_level_id === Number(yearLevelFilter))
   ))
+  const activeFilterCount = [assignmentFilter, programFilter, yearLevelFilter, sectionFilter, subjectFilter]
+    .filter(Boolean).length
+  const hasFilters = activeFilterCount > 0 || searchInput.trim() !== ''
+
+  function offeringIssues(offering: SubjectOffering): SchedulingReadinessIssue[] {
+    const offeringId = String(offering.id)
+    const professorIds = new Set(
+      (offering.faculty_assignments ?? []).map((assignment) => String(assignment.professor.id)),
+    )
+
+    return readiness?.issues.filter((issue) => {
+      if (issue.entity_type === 'academic_term') return true
+      if (issue.entity_type === 'subject_offering') return issue.entity_id === offeringId
+      if (issue.entity_type === 'professor') {
+        return issue.entity_id !== null && professorIds.has(issue.entity_id)
+      }
+
+      return false
+    }) ?? []
+  }
+
+  function assignmentStatusFor(offering: SubjectOffering): StatusMeta {
+    if (offering.status === 'cancelled') {
+      return { label: 'Cancelled', tone: 'neutral' }
+    }
+
+    const assignmentCount = offering.active_faculty_assignments_count
+      ?? offering.faculty_assignments?.length
+      ?? 0
+    const facultyIssue = offeringIssues(offering)
+      .find((issue) => (
+        issue.entity_type !== 'academic_term'
+        && issue.severity === 'blocking'
+        && issue.category === 'faculty'
+      ))
+
+    if (assignmentCount === 0) {
+      return { label: 'Missing professor', tone: 'warning' }
+    }
+
+    if (assignmentCount > 1) {
+      return { label: 'Multiple professors', tone: 'danger' }
+    }
+
+    if (facultyIssue) {
+      return { label: 'Assignment issue', tone: 'danger', title: facultyIssue.message }
+    }
+
+    return { label: 'Assigned', tone: 'success' }
+  }
+
+  function readinessStatusFor(offering: SubjectOffering): StatusMeta {
+    if (offering.status === 'cancelled') {
+      return { label: 'Cancelled', tone: 'neutral' }
+    }
+
+    if ((offering.published_schedules_count ?? 0) > 0) {
+      return { label: 'Scheduled', tone: 'success' }
+    }
+
+    if (offering.status === 'closed') {
+      return { label: 'Closed', tone: 'neutral' }
+    }
+
+    if (offering.status === 'draft') {
+      return { label: 'Draft', tone: 'neutral' }
+    }
+
+    if (isReadinessLoading) {
+      return { label: 'Checking', tone: 'neutral' }
+    }
+
+    if (readinessError) {
+      return { label: 'Unavailable', tone: 'neutral', title: readinessError }
+    }
+
+    if (!readiness) {
+      return { label: 'Not checked', tone: 'neutral' }
+    }
+
+    const assignmentCount = offering.active_faculty_assignments_count
+      ?? offering.faculty_assignments?.length
+      ?? 0
+
+    if (assignmentCount === 0) {
+      return { label: 'Incomplete', tone: 'warning', title: 'Assign a professor before scheduling.' }
+    }
+
+    const blockingIssues = offeringIssues(offering)
+      .filter((issue) => issue.severity === 'blocking')
+
+    if (blockingIssues.length > 0) {
+      return {
+        label: 'Blocked',
+        tone: 'danger',
+        title: blockingIssues.map((issue) => issue.message).join(' '),
+      }
+    }
+
+    return { label: 'Ready', tone: 'success' }
+  }
+
+  function professorLabel(offering: SubjectOffering): string | null {
+    const assignments = offering.faculty_assignments ?? []
+    if (assignments.length === 0) return null
+
+    return assignments
+      .map((assignment) => assignment.professor.user?.name ?? assignment.professor.employee_number)
+      .join(', ')
+  }
 
   function refreshDetails() {
     setIsDetailLoading(true)
@@ -198,19 +405,124 @@ export function SubjectOfferingsPage() {
     setIsDetailLoading(false)
   }
 
-  async function handleSave(payload: SubjectOfferingInput | SubjectOfferingUpdateInput) {
+  function clearFilters() {
+    setSearchInput('')
+    setSearch('')
+    setAssignmentFilter('')
+    setProgramFilter('')
+    setYearLevelFilter('')
+    setSectionFilter('')
+    setSubjectFilter('')
+    setPage(1)
+  }
+
+  function changeTerm(termId: string) {
+    setTermFilter(termId)
+    setProgramFilter('')
+    setYearLevelFilter('')
+    setSectionFilter('')
+    setSubjectFilter('')
+    setPage(1)
+    setOfferings([])
+    setSummary(null)
+    setReadiness(null)
+    setReadinessError(null)
+    setIsLoading(true)
+    setIsReadinessLoading(true)
+    setError(null)
+    setSuccess(null)
+    setWarning(null)
+  }
+
+  async function handleSave({ payload, professor_id }: SubjectOfferingFormSubmission) {
     if (dialogOffering) {
-      await updateSubjectOffering(dialogOffering.id, payload)
-      setSuccess('Subject offering changes saved.')
-    } else {
-      await createSubjectOffering(payload as SubjectOfferingInput)
-      setSuccess('Subject offering created as a draft.')
-      setPage(1)
+      const activeAssignments = dialogOffering.faculty_assignments
+        ?.filter((assignment) => assignment.status === 'active') ?? []
+      const currentProfessorId = activeAssignments[0]?.professor.id ?? null
+      const shouldSyncAssignments = professor_id !== currentProfessorId || activeAssignments.length > 1
+      const saved = await updateSubjectOffering(dialogOffering.id, payload)
+      let working = saved
+      let assignmentWarning: string | null = null
+
+      if (shouldSyncAssignments) {
+        try {
+          if (activeAssignments.length > 0) {
+            await Promise.all(
+              activeAssignments.map((assignment) => updateFacultyAssignmentStatus(assignment.id, 'cancelled')),
+            )
+          }
+
+          if (professor_id !== null) {
+            if (working.status !== 'open') {
+              working = await updateSubjectOfferingStatus(working.id, 'open')
+            }
+
+            await createFacultyAssignment({
+              professor_id,
+              subject_offering_id: working.id,
+              assignment_role: 'lead',
+            })
+          }
+        } catch (failure) {
+          assignmentWarning = `Class details were saved, but the professor assignment could not be updated: ${getApiErrorMessage(failure, 'Unknown error.')}`
+        }
+      }
+
+      setDialogOffering(undefined)
+      setRefreshVersion((version) => version + 1)
+      setReadinessVersion((version) => version + 1)
+      if (selectedOfferingId !== null) refreshDetails()
+
+      if (assignmentWarning) {
+        setSuccess(null)
+        setWarning(assignmentWarning)
+      } else {
+        setWarning(null)
+        setSuccess(
+          professor_id !== null
+            ? 'Class assignment changes saved and professor assigned.'
+            : 'Class assignment changes saved.',
+        )
+      }
+      return
+    }
+
+    let created = await createSubjectOffering(payload as SubjectOfferingInput)
+    let assignmentWarning: string | null = null
+
+    if (professor_id !== null) {
+      try {
+        if (created.status !== 'open') {
+          created = await updateSubjectOfferingStatus(created.id, 'open')
+        }
+
+        await createFacultyAssignment({
+          professor_id,
+          subject_offering_id: created.id,
+          assignment_role: 'lead',
+        })
+      } catch (failure) {
+        assignmentWarning = `Class assignment was created, but the professor could not be assigned: ${getApiErrorMessage(failure, 'Unknown error.')}`
+      }
     }
 
     setDialogOffering(undefined)
+    setPage(1)
     setRefreshVersion((version) => version + 1)
+    setReadinessVersion((version) => version + 1)
     if (selectedOfferingId !== null) refreshDetails()
+
+    if (assignmentWarning) {
+      setSuccess(null)
+      setWarning(assignmentWarning)
+    } else {
+      setWarning(null)
+      setSuccess(
+        professor_id !== null
+          ? 'Class assignment created and professor assigned.'
+          : 'Class assignment created as incomplete.',
+      )
+    }
   }
 
   function requestStatusChange(offering: SubjectOffering) {
@@ -221,14 +533,14 @@ export function SubjectOfferingsPage() {
     const action = statusActionLabel(offering)
     const description = status === 'open'
       ? offering.status === 'closed'
-        ? `Reopen ${offering.subject.code} - ${offering.section.code}? Eligibility will be revalidated before the offering becomes schedulable.`
-        : `Open ${offering.subject.code} - ${offering.section.code}? Only open offerings can receive schedules.`
-      : `Close ${offering.subject.code} - ${offering.section.code}? Existing schedules, room allocations, faculty assignments, and enrollments will be preserved.`
+        ? `Reopen ${offering.subject.code} - ${offering.section.code}? Eligibility will be revalidated before the class becomes schedulable.`
+        : `Open ${offering.subject.code} - ${offering.section.code}? Only open class assignments can receive schedules.`
+      : `Close ${offering.subject.code} - ${offering.section.code}? Existing schedules, room allocations, professor assignments, and enrollments will be preserved.`
 
     setConfirmDialog({
-      title: `${action} offering`,
+      title: `${action} class assignment`,
       description,
-      confirmLabel: `${action} offering`,
+      confirmLabel: `${action} class assignment`,
       cancelLabel: 'Cancel',
       destructive: status === 'closed',
       onConfirm: async () => {
@@ -237,21 +549,23 @@ export function SubjectOfferingsPage() {
         setError(null)
         setDetailError(null)
         setSuccess(null)
+        setWarning(null)
 
         try {
           await updateSubjectOfferingStatus(offering.id, status)
           setSuccess(
             status === 'closed'
-              ? 'Offering closed. Schedules, allocations, faculty assignments, and enrollments were preserved.'
+              ? 'Class assignment closed. Schedules, allocations, professor assignments, and enrollments were preserved.'
               : offering.status === 'closed'
-                ? 'Offering reopened.'
-                : 'Offering opened.',
+                ? 'Class assignment reopened.'
+                : 'Class assignment opened.',
           )
           setRefreshVersion((version) => version + 1)
+          setReadinessVersion((version) => version + 1)
           if (selectedOfferingId === offering.id) refreshDetails()
         } catch (failure) {
           const fieldMessage = Object.values(getApiFieldErrors(failure)).flat()[0]
-          const message = fieldMessage ?? getApiErrorMessage(failure, 'Unable to update offering status.')
+          const message = fieldMessage ?? getApiErrorMessage(failure, 'Unable to update class assignment status.')
           if (selectedOfferingId === offering.id) setDetailError(message)
           else setError(message)
         } finally {
@@ -265,16 +579,38 @@ export function SubjectOfferingsPage() {
     <>
       <PageHeader
         eyebrow="Academic structure"
-        title="Subject offerings"
-        description="Manage term-based subject sections, lifecycle status, expected enrollment, and their scheduling readiness."
+        title="Class assignments"
+        description="Create term-based classes, assign professors, and prepare each class for intelligent scheduling."
         actions={canManage ? (
-          <Button
-            leftIcon={<Plus className="size-4" aria-hidden="true" />}
-            disabled={isOptionsLoading || options.terms.length === 0}
-            onClick={() => setDialogOffering(null)}
-          >
-            Add offering
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+            <div className="space-y-1">
+              <label htmlFor="class-term" className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-muted">
+                Academic term
+              </label>
+              <select
+                id="class-term"
+                value={termFilter}
+                disabled={isOptionsLoading || options.terms.length === 0}
+                onChange={(event) => changeTerm(event.target.value)}
+                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 sm:w-56"
+              >
+                {options.terms.map((term) => (
+                  <option key={term.id} value={term.id}>
+                    {term.academic_year} - {term.name}
+                    {term.is_current ? ' (current)' : ''}
+                    {term.status === 'archived' ? ' (archived)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              leftIcon={<Plus className="size-4" aria-hidden="true" />}
+              disabled={!canCreate}
+              onClick={() => setDialogOffering(null)}
+            >
+              Create class assignment
+            </Button>
+          </div>
         ) : null}
       />
 
@@ -285,6 +621,17 @@ export function SubjectOfferingsPage() {
           <button type="button" className="ml-auto text-xs font-semibold underline" onClick={() => setSuccess(null)}>
             Dismiss
           </button>
+        </div>
+      ) : null}
+
+      {warning ? (
+        <div role="alert" className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+          <div className="flex items-start gap-2">
+            <p className="flex-1">{warning}</p>
+            <button type="button" className="text-xs font-semibold underline" onClick={() => setWarning(null)}>
+              Dismiss
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -299,141 +646,172 @@ export function SubjectOfferingsPage() {
 
       <Card>
         <CardBody>
-          <form
-            className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setPage(1)
-              setSearch(searchInput.trim())
-              setSuccess(null)
-            }}
-          >
+          <div className="grid grid-cols-1 divide-y divide-line rounded-lg border border-line bg-surface-soft/60 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Total classes</p>
+              <p className="mt-1 text-2xl font-semibold text-ink">{summary?.total ?? '—'}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Assigned</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-700">{summary?.assigned ?? '—'}</p>
+            </div>
+            <div className="p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-muted">Incomplete</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-700">{summary?.incomplete ?? '—'}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <TextField
-              label="Search offerings"
+              label="Search class assignments"
               name="search"
               type="search"
               value={searchInput}
-              placeholder="Subject, section, or term"
+              placeholder="Subject, section, or professor"
               onChange={(event) => setSearchInput(event.target.value)}
+              className="w-full md:max-w-md"
             />
-            <div className="space-y-1.5">
-              <label htmlFor="offering-status-filter" className="block text-sm font-medium text-ink">
-                Status
-              </label>
-              <select
-                id="offering-status-filter"
-                value={statusFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || statusOptions.some((option) => option.value === value)) {
-                    setStatusFilter(value as SubjectOfferingStatus | '')
-                  }
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={filtersOpen ? 'secondary' : 'outline'}
+                leftIcon={<Filter className="size-4" aria-hidden="true" />}
+                onClick={() => setFiltersOpen((current) => !current)}
               >
-                <option value="">All statuses</option>
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              </Button>
+              {hasFilters ? (
+                <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>
+                  Clear
+                </Button>
+              ) : null}
             </div>
-            <div className="space-y-1.5">
-              <label htmlFor="offering-term-filter" className="block text-sm font-medium text-ink">
-                Term
-              </label>
-              <select
-                id="offering-term-filter"
-                value={termFilter}
-                onChange={(event) => {
-                  setPage(1)
-                  setTermFilter(event.target.value)
-                  setSectionFilter('')
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All terms</option>
-                {options.terms.map((term) => (
-                  <option key={term.id} value={term.id}>
-                    {term.academic_year} - {term.name}
-                  </option>
-                ))}
-              </select>
+          </div>
+
+          {filtersOpen ? (
+            <div className="mt-4 grid gap-3 rounded-lg border border-line bg-stone-50 p-4 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="space-y-1.5">
+                <label htmlFor="class-program-filter" className="block text-sm font-medium text-ink">
+                  Program
+                </label>
+                <select
+                  id="class-program-filter"
+                  value={programFilter}
+                  onChange={(event) => {
+                    setProgramFilter(event.target.value)
+                    setYearLevelFilter('')
+                    setSectionFilter('')
+                    setPage(1)
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">All programs</option>
+                  {options.programs.map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.code} - {program.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="class-year-filter" className="block text-sm font-medium text-ink">
+                  Year level
+                </label>
+                <select
+                  id="class-year-filter"
+                  value={yearLevelFilter}
+                  disabled={!termFilter}
+                  onChange={(event) => {
+                    setYearLevelFilter(event.target.value)
+                    setSectionFilter('')
+                    setPage(1)
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">All year levels</option>
+                  {programYearLevels.map((yearLevel) => (
+                    <option key={yearLevel.id} value={yearLevel.id}>
+                      {yearLevel.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="class-section-filter" className="block text-sm font-medium text-ink">
+                  Section
+                </label>
+                <select
+                  id="class-section-filter"
+                  value={sectionFilter}
+                  onChange={(event) => {
+                    setSectionFilter(event.target.value)
+                    setPage(1)
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">All sections</option>
+                  {filteredSectionOptions.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.code}
+                      {section.program ? ` (${section.program.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="class-subject-filter" className="block text-sm font-medium text-ink">
+                  Subject
+                </label>
+                <select
+                  id="class-subject-filter"
+                  value={subjectFilter}
+                  onChange={(event) => {
+                    setSubjectFilter(event.target.value)
+                    setPage(1)
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">All subjects</option>
+                  {options.subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.code} - {subject.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="class-assignment-filter" className="block text-sm font-medium text-ink">
+                  Assignment status
+                </label>
+                <select
+                  id="class-assignment-filter"
+                  value={assignmentFilter}
+                  onChange={(event) => {
+                    setAssignmentFilter(event.target.value as SubjectOfferingAssignmentFilter | '')
+                    setPage(1)
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">All assignments</option>
+                  <option value="assigned">Assigned</option>
+                  <option value="incomplete">Incomplete</option>
+                </select>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label htmlFor="offering-program-filter" className="block text-sm font-medium text-ink">
-                Program
-              </label>
-              <select
-                id="offering-program-filter"
-                value={programFilter}
-                onChange={(event) => {
-                  setPage(1)
-                  setProgramFilter(event.target.value)
-                  setSectionFilter('')
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All programs</option>
-                {options.programs.map((program) => (
-                  <option key={program.id} value={program.id}>
-                    {program.code} - {program.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="offering-section-filter" className="block text-sm font-medium text-ink">
-                Section
-              </label>
-              <select
-                id="offering-section-filter"
-                value={sectionFilter}
-                onChange={(event) => {
-                  setPage(1)
-                  setSectionFilter(event.target.value)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All sections</option>
-                {filteredSectionOptions.map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.code}
-                    {section.program ? ` (${section.program.code})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="offering-subject-filter" className="block text-sm font-medium text-ink">
-                Subject
-              </label>
-              <select
-                id="offering-subject-filter"
-                value={subjectFilter}
-                onChange={(event) => {
-                  setPage(1)
-                  setSubjectFilter(event.target.value)
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All subjects</option>
-                {options.subjects.map((subject) => (
-                  <option key={subject.id} value={subject.id}>
-                    {subject.code} - {subject.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end xl:col-span-2">
-              <Button type="submit" variant="outline" className="w-full sm:w-auto">
-                <Search className="size-4" aria-hidden="true" />
-                Search
+          ) : null}
+
+          {readinessError && !isReadinessLoading ? (
+            <div className="mt-4 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+              <p>Scheduling readiness is unavailable. Assignment status is still shown.</p>
+              <Button size="sm" variant="outline" onClick={() => setReadinessVersion((version) => version + 1)}>
+                Retry readiness
               </Button>
             </div>
-          </form>
+          ) : null}
 
           {error ? (
             <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -442,103 +820,125 @@ export function SubjectOfferingsPage() {
                 Retry
               </Button>
             </div>
+          ) : isOptionsLoading ? (
+            <div className="py-16 text-center text-sm text-ink-muted" role="status">
+              Loading class assignments.
+            </div>
+          ) : !termFilter ? (
+            <div className="py-16 text-center text-sm text-ink-muted" role="status">
+              {options.terms.length === 0
+                ? 'No academic terms are available.'
+                : 'Select an academic term to view class assignments.'}
+            </div>
           ) : isLoading ? (
             <div className="py-16 text-center text-sm text-ink-muted" role="status">
-              Loading subject offerings.
+              Loading class assignments.
             </div>
           ) : offerings.length === 0 ? (
             <div className="mt-5">
               <EmptyState
                 icon={BookOpenCheck}
-                title="No subject offerings found"
-                description={search || statusFilter || termFilter || programFilter || sectionFilter || subjectFilter
+                title={hasFilters ? 'No class assignments match' : 'No class assignments for this term'}
+                description={hasFilters
                   ? 'Try adjusting the search or filters.'
-                  : 'Create the first draft offering for a term and section to prepare it for scheduling.'}
-                action={canManage && !search && !statusFilter && !termFilter && !programFilter && !sectionFilter && !subjectFilter && options.terms.length > 0 ? (
-                  <Button onClick={() => setDialogOffering(null)}>Add offering</Button>
+                  : 'Create the first class assignment for this term, then assign a professor or save it as incomplete.'}
+                action={canCreate && !hasFilters ? (
+                  <Button onClick={() => setDialogOffering(null)}>Create class assignment</Button>
                 ) : null}
               />
             </div>
           ) : (
             <>
               <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[1100px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     <tr>
-                      <th className="px-4 py-3">Offering</th>
+                      <th className="px-4 py-3">Class</th>
                       <th className="px-4 py-3">Section</th>
-                      <th className="px-4 py-3">Term</th>
-                      <th className="px-4 py-3">Students</th>
-                      <th className="px-4 py-3">Teaching</th>
-                      <th className="px-4 py-3">Schedules</th>
-                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Professor</th>
+                      <th className="px-4 py-3">Assignment</th>
+                      <th className="px-4 py-3">Scheduling readiness</th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {offerings.map((offering) => (
-                      <tr key={offering.id} className="align-top">
-                        <td className="px-4 py-4">
-                          <p className="font-semibold text-ink">{offering.subject.code}</p>
-                          <p className="mt-0.5 text-xs text-ink-muted">{offering.subject.title}</p>
-                        </td>
-                        <td className="px-4 py-4">
-                          <p className="font-medium text-ink">{offering.section.code}</p>
-                          <p className="mt-0.5 text-xs text-ink-muted">
-                            {offering.section.program?.code ?? '-'}
-                            {offering.section.year_level ? ` | ${offering.section.year_level.name}` : ''}
-                          </p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {offering.academic_term.academic_year}
-                          <p className="mt-0.5 text-xs">{offering.academic_term.name}</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {offering.expected_students ?? '-'} expected
-                          <p className="mt-0.5 text-xs">{offering.enrolled_students_count ?? 0} enrolled</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {offering.active_faculty_assignments_count ?? 0} active
-                          <p className="mt-0.5 text-xs">faculty assignments</p>
-                        </td>
-                        <td className="px-4 py-4 text-ink-muted">
-                          {offering.published_schedules_count ?? 0} published
-                          <p className="mt-0.5 text-xs">class schedules</p>
-                        </td>
-                        <td className="px-4 py-4">
-                          <SubjectOfferingStatusBadge status={offering.status} />
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => openDetails(offering)}>
-                              View
-                            </Button>
-                            {canManage && canEditOffering(offering) ? (
-                              <Button size="sm" variant="outline" onClick={() => setDialogOffering(offering)}>
-                                Edit
+                    {offerings.map((offering) => {
+                      const assignmentStatus = assignmentStatusFor(offering)
+                      const readinessStatus = readinessStatusFor(offering)
+                      const professor = professorLabel(offering)
+
+                      return (
+                        <tr key={offering.id} className="align-top">
+                          <td className="px-4 py-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-semibold text-ink">{offering.subject.code}</p>
+                              <SubjectOfferingStatusBadge status={offering.status} />
+                            </div>
+                            <p className="mt-0.5 text-xs text-ink-muted">{offering.subject.title}</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="font-medium text-ink">{offering.section.code}</p>
+                            <p className="mt-0.5 text-xs text-ink-muted">
+                              {[
+                                offering.section.program?.code,
+                                offering.section.year_level?.name,
+                                offering.section.major?.code,
+                              ].filter(Boolean).join(' · ') || '-'}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <p
+                              className={professor ? 'font-medium text-ink' : 'font-medium text-amber-700'}
+                              title={professor ?? undefined}
+                            >
+                              {professor ?? 'Unassigned'}
+                            </p>
+                            <p className="mt-0.5 text-xs text-ink-muted">
+                              {offering.active_faculty_assignments_count ?? offering.faculty_assignments?.length ?? 0} active
+                            </p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span title={assignmentStatus.title}>
+                              <Badge tone={assignmentStatus.tone}>{assignmentStatus.label}</Badge>
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span title={readinessStatus.title}>
+                              <Badge tone={readinessStatus.tone}>{readinessStatus.label}</Badge>
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" variant="outline" onClick={() => openDetails(offering)}>
+                                View
                               </Button>
-                            ) : null}
-                            {canManage && nextStatus(offering) ? (
-                              <Button
-                                size="sm"
-                                variant={offering.status === 'open' ? 'outline' : 'secondary'}
-                                isLoading={busyOfferingId === offering.id}
-                                onClick={() => requestStatusChange(offering)}
-                              >
-                                {statusActionLabel(offering)}
-                              </Button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {canManage && canEditOffering(offering) ? (
+                                <Button size="sm" variant="outline" onClick={() => setDialogOffering(offering)}>
+                                  Edit
+                                </Button>
+                              ) : null}
+                              {canManage && nextStatus(offering) ? (
+                                <Button
+                                  size="sm"
+                                  variant={offering.status === 'open' ? 'outline' : 'secondary'}
+                                  isLoading={busyOfferingId === offering.id}
+                                  onClick={() => requestStatusChange(offering)}
+                                >
+                                  {statusActionLabel(offering)}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-ink-muted">
-                  {pagination.total} offering{pagination.total === 1 ? '' : 's'} | Page {page} of {pagination.last_page}
+                  {pagination.total} class assignment{pagination.total === 1 ? '' : 's'} | Page {page} of {pagination.last_page}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -573,6 +973,7 @@ export function SubjectOfferingsPage() {
           key={dialogOffering?.id ?? 'new'}
           offering={dialogOffering}
           options={options}
+          termId={dialogOffering?.academic_term_id ?? Number(termFilter)}
           onCancel={() => setDialogOffering(undefined)}
           onSubmit={handleSave}
         />

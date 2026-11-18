@@ -231,7 +231,7 @@ export function DashboardPage() {
             <h2 className="text-sm font-semibold text-ink">Quick links</h2>
             <ul className="mt-3 divide-y divide-line text-sm">
               {[
-                { to: "/academic/subject-offerings", label: "Subject offerings" },
+                { to: "/academic/subject-offerings", label: "Class assignments" },
                 { to: "/faculty", label: "Faculty availability & workload" },
                 { to: "/rooms", label: "Room inventory" },
                 { to: "/activities?view=announcements", label: "Campus announcements" },

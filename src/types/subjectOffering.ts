@@ -24,10 +24,18 @@ export interface SubjectOfferingYearLevel {
   name: string
 }
 
+export interface SubjectOfferingMajor {
+  id: number
+  program_id: number
+  code: string
+  name: string
+}
+
 export interface SubjectOfferingSection {
   id: number
   program_id: number
   year_level_id: number
+  major_id: number | null
   academic_term_id: number
   code: string
   name: string | null
@@ -35,6 +43,7 @@ export interface SubjectOfferingSection {
   status: string
   program?: SubjectOfferingProgram
   year_level?: SubjectOfferingYearLevel
+  major?: SubjectOfferingMajor | null
 }
 
 export interface SubjectOfferingSubject {
@@ -45,20 +54,22 @@ export interface SubjectOfferingSubject {
   status: string
 }
 
+export interface SubjectOfferingProfessor {
+  id: number
+  employee_number: string
+  status: string
+  user?: {
+    id: number
+    name: string
+    status: string
+  }
+}
+
 export interface SubjectOfferingFacultyAssignment {
   id: number
   assignment_role: string
   status: string
-  professor: {
-    id: number
-    employee_number: string
-    status: string
-    user?: {
-      id: number
-      name: string
-      status: string
-    }
-  }
+  professor: SubjectOfferingProfessor
 }
 
 export interface SubjectOfferingRoomAllocation {
@@ -117,17 +128,36 @@ export interface SubjectOfferingOptions {
   programs: SubjectOfferingProgram[]
   sections: SubjectOfferingSection[]
   subjects: SubjectOfferingSubject[]
+  professors: SubjectOfferingProfessor[]
 }
+
+export type SubjectOfferingAssignmentFilter = 'assigned' | 'incomplete'
 
 export interface SubjectOfferingFilters {
   search?: string
   status?: SubjectOfferingStatus
+  assignment_status?: SubjectOfferingAssignmentFilter
   academic_term_id?: number
   section_id?: number
   subject_id?: number
   program_id?: number
+  year_level_id?: number
   page?: number
   per_page?: number
+}
+
+export interface SubjectOfferingSummary {
+  total: number
+  assigned: number
+  incomplete: number
+}
+
+export interface CurriculumSubjectFilters {
+  program_id: number
+  year_level_id: number
+  semester?: string
+  classification?: 'common' | 'major'
+  major_id?: number
 }
 
 export type SubjectOfferingPagination = AcademicPagination

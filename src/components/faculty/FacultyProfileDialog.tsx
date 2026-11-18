@@ -358,7 +358,7 @@ export function FacultyProfileDialog({
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   <p className="font-semibold">Workload calculation is incomplete.</p>
                   <p className="mt-1">
-                    Offerings with assignment conflicts or invalid subject-hour requirements are excluded from
+                    Class assignments with assignment conflicts or invalid subject-hour requirements are excluded from
                     assigned and scheduled totals until they are corrected.
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -460,7 +460,7 @@ export function FacultyProfileDialog({
                     Assigned {formatHours(professor.workload.assigned_hours)} against an approved quota of{' '}
                     {formatHours(professor.workload.weekly_quota)}.
                   </p>
-                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide">Contributing offerings</p>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide">Contributing class assignments</p>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
                     {professor.workload.offerings.map((offering) => (
                       <li key={offering.offering_id}>
@@ -492,7 +492,7 @@ export function FacultyProfileDialog({
 
               {professor.workload.unscheduled_offerings_count > 0 ? (
                 <p className="text-xs text-ink-muted">
-                  {professor.workload.unscheduled_offerings_count} assigned offering
+                  {professor.workload.unscheduled_offerings_count} assigned class assignment
                   {professor.workload.unscheduled_offerings_count === 1 ? '' : 's'} do not have published
                   scheduled meetings yet. Scheduled hours only include published class schedules.
                 </p>
@@ -560,7 +560,7 @@ export function FacultyProfileDialog({
                 </div>
               ) : (
                 <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-ink-muted">
-                  No active subject offerings are assigned for the current academic term.
+                  No active class assignments are assigned for the current academic term.
                 </p>
               )}
             </section>
@@ -658,7 +658,7 @@ export function FacultyProfileDialog({
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-maroon-600">
                   Teaching assignments
                 </p>
-                <h3 className="mt-1 text-lg font-semibold">Assigned subject offerings</h3>
+                <h3 className="mt-1 text-lg font-semibold">Assigned class assignments</h3>
                 <p className="mt-1 text-sm text-ink-muted">
                   Recorded teaching assignments for this faculty profile.
                 </p>

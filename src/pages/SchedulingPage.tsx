@@ -739,8 +739,8 @@ export function SchedulingPage() {
         <Card className="mb-5">
           <EmptyState
             icon={CalendarDays}
-            title="No open offerings for this term"
-            description="Create or open subject offerings in Academic Structure before scheduling classes."
+            title="No open class assignments for this term"
+            description="Create or open class assignments in Academic Structure before scheduling classes."
           />
         </Card>
       ) : null}
@@ -947,15 +947,15 @@ export function SchedulingPage() {
                         {options?.professors.map((professor) => <option key={professor.id} value={professor.id}>{professor.name}</option>)}
                       </select>
                     </label>
-                    <label className="text-xs font-semibold text-ink-muted">Offering role
+                    <label className="text-xs font-semibold text-ink-muted">Class assignment role
                       <select value={assignmentRole} onChange={(event) => setAssignmentRole(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
                         <option value="lead">Lead</option><option value="co_instructor">Co-instructor</option><option value="lab_instructor">Lab instructor</option><option value="substitute">Substitute</option>
                       </select>
                     </label>
-                    <span className="flex items-end"><Button type="submit" variant="outline" size="sm" disabled={!selectedOffering || !professorId}>Add to offering</Button></span>
+                    <span className="flex items-end"><Button type="submit" variant="outline" size="sm" disabled={!selectedOffering || !professorId}>Add to class assignment</Button></span>
                   </form>
                   <form onSubmit={handleAssignFaculty} className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                    <label className="text-xs font-semibold text-ink-muted">Offering assignment
+                    <label className="text-xs font-semibold text-ink-muted">Class assignment
                       <select required value={facultyId} onChange={(event) => setFacultyId(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm text-ink">
                         <option value="">Choose instructor assignment</option>
                         {assignments.filter((assignment) => assignment.status === 'active').map((assignment) => <option key={assignment.id} value={assignment.id}>{assignment.professor.name} · {assignment.assignment_role.replaceAll('_', ' ')}</option>)}

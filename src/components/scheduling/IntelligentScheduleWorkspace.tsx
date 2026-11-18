@@ -234,7 +234,7 @@ export function IntelligentScheduleWorkspace({
       } catch (failure) {
         if (active) {
           setReadiness(null)
-          setReadinessError(getApiErrorMessage(failure, 'Unable to validate offerings against the active curriculum.'))
+          setReadinessError(getApiErrorMessage(failure, 'Unable to validate class assignments against the active curriculum.'))
         }
       } finally {
         if (active) setReadinessLoading(false)
@@ -344,7 +344,7 @@ export function IntelligentScheduleWorkspace({
     })
     if (summary.unavailable || profileFailures) {
       setAssignmentError(
-        `${summary.unavailable} offering assignment record${summary.unavailable === 1 ? '' : 's'} and ${profileFailures} professor profile${profileFailures === 1 ? '' : 's'} could not be checked. These inputs remain unverified.`,
+        `${summary.unavailable} class assignment record${summary.unavailable === 1 ? '' : 's'} and ${profileFailures} professor profile${profileFailures === 1 ? '' : 's'} could not be checked. These inputs remain unverified.`,
       )
     }
     setAssignmentLoading(false)
@@ -374,12 +374,12 @@ export function IntelligentScheduleWorkspace({
         ? 'blocked'
         : 'ready'
   const assignmentDetail = assignmentLoading
-    ? `Checking active assignment records: ${checkedOfferingCount} of ${configuredOfferings.length} open offerings.`
-    : !hasCurrentAssignmentCheck
-      ? 'Professor assignments have not been checked for the configured offerings. The AI never selects or redistributes professors.'
-      : assignmentReadiness && assignmentProblemCount
-        ? `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary offering.`
-        : `${assignmentReadiness?.checkedOfferings ?? 0} offerings each have exactly one distinct assigned professor.`
+    ? `Checking active assignment records: ${checkedOfferingCount} of ${configuredOfferings.length} open class assignments.`
+    : assignmentReadiness
+      ? 'Professor assignments have not been checked for the configured class assignments. The AI never selects or redistributes professors.'
+      : hasCurrentAssignmentCheck
+        ? `${assignmentReadiness?.missing} unassigned · ${assignmentReadiness?.multiple} with multiple distinct professors · ${assignmentReadiness?.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary class assignment.`
+        : `${assignmentReadiness?.checkedOfferings ?? 0} class assignments each have exactly one distinct assigned professor.`
 
   const curriculumIssues = readiness?.issues.filter((issue) => (
     issue.code === 'offering_subject_not_in_curriculum' || issue.code.startsWith('curriculum_')
@@ -401,28 +401,28 @@ export function IntelligentScheduleWorkspace({
             ? 'warning'
             : 'ready'
   const curriculumDetail = readinessLoading
-    ? 'Validating open offerings against the active curriculum…'
+    ? 'Validating open class assignments against the active curriculum…'
     : readinessError
       ? readinessError
       : !readiness
-        ? 'Curriculum validation is unavailable, so the offering set cannot be confirmed.'
+        ? 'Curriculum validation is unavailable, so the class assignment set cannot be confirmed.'
         : configuredOfferings.length === 0
-          ? 'No open offerings are available to validate against the curriculum.'
+          ? 'No open class assignments are available to validate against the curriculum.'
           : curriculumBlockingCount
-            ? `${curriculumBlockingCount} curriculum validation issue${curriculumBlockingCount === 1 ? '' : 's'} found. Open offerings must match an active mapping for the section program, year level, semester, and major.`
+            ? `${curriculumBlockingCount} curriculum validation issue${curriculumBlockingCount === 1 ? '' : 's'} found. Open class assignments must match an active mapping for the section program, year level, semester, and major.`
             : curriculumWarningCount
               ? [
                   missingMappingScopes
                     ? `${missingMappingScopes} program/year/semester scope${missingMappingScopes === 1 ? '' : 's'} have no active curriculum mapping.`
                     : null,
                   missingOfferingScopes
-                    ? `${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open offering.`
+                    ? `${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open class assignment.`
                     : null,
                   unrecognizedSemester
                     ? 'The term semester is not recognized, so curriculum mappings cannot be matched.'
                     : null,
                 ].filter(Boolean).join(' ')
-              : `${configuredOfferings.length} open offerings match active curriculum mappings. Only this validated set may be consumed by generation.`
+              : `${configuredOfferings.length} open class assignments match active curriculum mappings. Only this validated set may be consumed by generation.`
 
   const academicChecks: ReadinessCheck[] = [
     {
@@ -439,12 +439,12 @@ export function IntelligentScheduleWorkspace({
         : loadError
           ? loadError
           : configuredOfferings.length
-            ? `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections are represented in the returned offerings.`
-            : 'No configured offerings were returned for this term.',
+            ? `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections are represented in the returned class assignments.`
+            : 'No configured class assignments were returned for this term.',
       link: { to: '/academic/sections', label: 'Review sections' },
     },
     {
-      title: 'Required subject offerings',
+      title: 'Required class assignments',
       state: optionsLoading || readinessLoading
         ? 'checking'
         : loadError || readinessError
@@ -455,20 +455,20 @@ export function IntelligentScheduleWorkspace({
               : 'ready'
             : 'blocked',
       detail: optionsLoading || readinessLoading
-        ? 'Loading open subject offerings and curriculum coverage…'
+        ? 'Loading open class assignments and curriculum coverage…'
         : loadError || readinessError
           ? (loadError || readinessError || 'Curriculum coverage could not be confirmed.')
           : configuredOfferings.length
             ? missingMappingScopes
-              ? `${configuredOfferings.length} open offerings are available, but ${missingMappingScopes} program/year/semester scope${missingMappingScopes === 1 ? '' : 's'} have no active curriculum mapping, so required coverage cannot be confirmed.`
+              ? `${configuredOfferings.length} open class assignments are available, but ${missingMappingScopes} program/year/semester scope${missingMappingScopes === 1 ? '' : 's'} have no active curriculum mapping, so required coverage cannot be confirmed.`
               : missingOfferingScopes
-                ? `${configuredOfferings.length} open offerings are available, but ${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open offering.`
-                : `${configuredOfferings.length} open offerings cover every subject mapped to the active curriculum scopes for this term.`
-            : 'No open offerings are available. Create or open subject offerings before scheduling.',
-      link: { to: '/academic/subject-offerings', label: 'Review subject offerings' },
+                ? `${configuredOfferings.length} open class assignments are available, but ${missingOfferingScopes} section scope${missingOfferingScopes === 1 ? '' : 's'} have mapped subjects without an open class assignment.`
+                : `${configuredOfferings.length} open class assignments cover every subject mapped to the active curriculum scopes for this term.`
+            : 'No open class assignments are available. Create or open class assignments before scheduling.',
+      link: { to: '/academic/subject-offerings', label: 'Review class assignments' },
     },
     {
-      title: 'Validated offering set',
+      title: 'Validated class assignment set',
       state: curriculumCheckState,
       detail: curriculumDetail,
       link: { to: '/academic/curriculum', label: 'Review curriculum mappings' },
@@ -480,18 +480,18 @@ export function IntelligentScheduleWorkspace({
       title: 'Lecture and laboratory meeting plans',
       state: 'blocked',
       detail: 'Meeting frequency, duration, and meeting type are not available yet.',
-      link: { to: '/academic/subject-offerings', label: 'Review offerings' },
+      link: { to: '/academic/subject-offerings', label: 'Review class assignments' },
     },
     {
       title: 'Frequency, duration, and required room type',
       state: 'blocked',
-      detail: 'Approved meeting requirements must come from offering data. Subject catalog hours are not treated as a meeting plan.',
+      detail: 'Approved meeting requirements must come from class assignment data. Subject catalog hours are not treated as a meeting plan.',
     },
   ]
 
   const facultyChecks: ReadinessCheck[] = [
     {
-      title: 'One distinct professor per offering',
+      title: 'One distinct professor per class assignment',
       state: assignmentCheckState,
       detail: assignmentDetail,
       link: { to: '/academic/subject-offerings', label: 'Review faculty assignments' },
@@ -604,7 +604,7 @@ export function IntelligentScheduleWorkspace({
       id: 'academic',
       title: 'Academic configuration',
       summary: optionsLoading
-        ? 'Loading programs, sections, and offerings…'
+        ? 'Loading programs, sections, and class assignments…'
         : loadError
           ? 'Scheduling options could not be loaded.'
           : `${programCount} programs · ${yearLevelCount} year levels · ${sectionCount} sections`,
@@ -622,7 +622,7 @@ export function IntelligentScheduleWorkspace({
       summary: !hasCurrentAssignmentCheck
         ? 'Professor assignments have not been checked.'
         : assignmentProblemCount
-          ? `${assignmentProblemCount} of ${assignmentReadiness?.checkedOfferings ?? configuredOfferings.length} offerings need attention.`
+          ? `${assignmentProblemCount} of ${assignmentReadiness?.checkedOfferings ?? configuredOfferings.length} class assignments need attention.`
           : `${assignmentReadiness?.distinctProfessors ?? 0} professors assigned without assignment issues.`,
       checks: facultyChecks,
       extra: availabilityExtra,
@@ -673,7 +673,7 @@ export function IntelligentScheduleWorkspace({
     try {
       await checkAssignments()
     } catch (failure) {
-      setAssignmentError(getApiErrorMessage(failure, 'Unable to validate offering assignments.'))
+      setAssignmentError(getApiErrorMessage(failure, 'Unable to validate class assignments.'))
       setAssignmentLoading(false)
     }
   }
@@ -878,9 +878,9 @@ function OverviewStage({
               <SummaryMetric label="Programs" value={optionsLoading ? '—' : `${programCount}`} />
               <SummaryMetric label="Sections" value={optionsLoading ? '—' : `${sectionCount}`} />
               <SummaryMetric
-                label="Required offerings"
+                label="Required class assignments"
                 value={optionsLoading ? '—' : `${offeringCount}`}
-                detail="Open offerings returned"
+                detail="Open class assignments returned"
               />
               <SummaryMetric
                 label="Assigned professors"
@@ -888,7 +888,7 @@ function OverviewStage({
               />
             </dl>
             <p className="mt-4 border-t border-line pt-3 text-[11px] leading-4 text-ink-muted">
-              Counts come from the current scheduling options. CCSync returns open offerings and cannot yet confirm the complete required-offering set.
+              Counts come from the current scheduling options. CCSync returns open class assignments and cannot yet confirm the complete required class assignment set.
             </p>
           </CardBody>
         </Card>
@@ -1139,7 +1139,7 @@ function GenerationStage({
               <DefinitionRow label="Academic term" value={termName(term)} />
               <DefinitionRow
                 label="Scope"
-                value="All configured programs, year levels, sections, and required offerings"
+                value="All configured programs, year levels, sections, and required class assignments"
               />
               <DefinitionRow
                 label="Published baseline"

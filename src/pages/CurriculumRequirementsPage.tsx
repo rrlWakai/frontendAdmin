@@ -39,7 +39,7 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
   resource: 'curriculum-requirements',
   title: 'Curriculum mappings',
   description:
-    'Map catalog subjects to program, year level, semester, and major scope. These mappings validate offerings for scheduling; they never create offerings automatically.',
+    'Map catalog subjects to program, year level, semester, and major scope. These mappings validate class assignments for scheduling; they never create class assignments automatically.',
   singular: 'Curriculum mapping',
   searchPlaceholder: 'Requirement type, semester, or classification',
   emptyDescription: 'Curriculum mappings will appear here when subjects are assigned to a curriculum scope.',

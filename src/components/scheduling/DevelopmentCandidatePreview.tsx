@@ -49,8 +49,8 @@ export function DevelopmentCandidatePreview() {
         </CardHeader>
         <CardBody>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Metric label="Required offerings" value={`${requiredOfferings}`} detail="Sample configured set" />
-            <Metric label="Scheduled offerings" value={`${scheduledOfferingCount} / ${requiredOfferings}`} detail={complete ? 'All sample offerings represented' : 'Candidate is incomplete'} />
+            <Metric label="Required class assignments" value={`${requiredOfferings}`} detail="Sample configured set" />
+            <Metric label="Scheduled class assignments" value={`${scheduledOfferingCount} / ${requiredOfferings}`} detail={complete ? 'All sample class assignments represented' : 'Candidate is incomplete'} />
             <Metric label="Scheduled meetings" value={`${candidate.length} / ${requiredMeetings}`} detail={`${unscheduledMeetings.length} unscheduled`} />
             <Metric label="Retained placements" value={`${retainedCount}`} detail="Day, start time, and room retained" />
             <Metric label="Changed / new" value={`${changedCount} / ${newCount}`} detail="Solver may change valid placements" />

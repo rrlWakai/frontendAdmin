@@ -63,10 +63,10 @@ export function SubjectOfferingDetailsDialog({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
-              Subject offering
+              Class assignment
             </p>
             <h2 id="subject-offering-details-title" className="mt-1 text-xl font-semibold">
-              {offering ? `${offering.subject.code} - ${offering.subject.title}` : 'Offering details'}
+              {offering ? `${offering.subject.code} - ${offering.subject.title}` : 'Class assignment details'}
             </h2>
             {offering ? (
               <p className="mt-1 text-sm text-ink-muted">
@@ -89,7 +89,7 @@ export function SubjectOfferingDetailsDialog({
           </div>
         ) : isLoading ? (
           <div role="status" className="py-12 text-center text-sm text-ink-muted">
-            Loading offering details.
+            Loading class assignment details.
           </div>
         ) : offering ? (
           <>
@@ -135,7 +135,7 @@ export function SubjectOfferingDetailsDialog({
                 <p className="mt-1 text-sm font-semibold text-ink">{offering.subject.units}</p>
               </div>
               <div>
-                <p className="text-xs font-medium text-ink-muted">Active faculty</p>
+                <p className="text-xs font-medium text-ink-muted">Assigned professors</p>
                 <p className="mt-1 text-sm font-semibold text-ink">
                   {offering.active_faculty_assignments_count}
                 </p>
@@ -163,7 +163,7 @@ export function SubjectOfferingDetailsDialog({
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-600">
                   Teaching
                 </p>
-                <h3 className="mt-1 text-lg font-semibold">Active faculty assignments</h3>
+                <h3 className="mt-1 text-lg font-semibold">Professor assignments</h3>
               </div>
               {offering.faculty_assignments.length ? (
                 <div className="overflow-x-auto rounded-lg border border-line">
@@ -198,7 +198,7 @@ export function SubjectOfferingDetailsDialog({
                 </div>
               ) : (
                 <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-ink-muted">
-                  No active faculty assignments are linked to this offering.
+                  No active professor is assigned to this class assignment.
                 </p>
               )}
             </section>
@@ -210,7 +210,7 @@ export function SubjectOfferingDetailsDialog({
                 </p>
                 <h3 className="mt-1 text-lg font-semibold">Class schedules</h3>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Schedules are preserved across offering status changes.
+                  Schedules are preserved across class assignment status changes.
                 </p>
               </div>
               {offering.class_schedules.length ? (
@@ -248,7 +248,7 @@ export function SubjectOfferingDetailsDialog({
                 </div>
               ) : (
                 <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-ink-muted">
-                  No class schedules are linked to this offering.
+                  No class schedules are linked to this class assignment.
                 </p>
               )}
             </section>

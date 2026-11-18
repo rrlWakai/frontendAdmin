@@ -90,7 +90,7 @@ const routes: RouteObject[] = [
           {
             path: 'academic/subject-offerings',
             element: <SubjectOfferingsPage />,
-            handle: { title: 'Subject offerings' } satisfies RouteHandle,
+            handle: { title: 'Class assignments' } satisfies RouteHandle,
           },
           {
             path: 'scheduling',

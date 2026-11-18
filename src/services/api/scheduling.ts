@@ -60,6 +60,18 @@ export async function createFacultyAssignment(
   return data.data.assignment
 }
 
+export async function updateFacultyAssignmentStatus(
+  assignmentId: number,
+  status: 'completed' | 'cancelled',
+): Promise<FacultyAssignmentOption> {
+  const { data } = await apiClient.patch<ApiSuccessResponse<{ assignment: FacultyAssignmentOption }>>(
+    `/faculty-assignments/${assignmentId}/status`,
+    { status },
+  )
+
+  return data.data.assignment
+}
+
 export async function createSchedule(input: ScheduleInput): Promise<ScheduleRecord> {
   const { data } = await apiClient.post<ApiSuccessResponse<{ schedule: ScheduleRecord }>>(
     '/schedules',

@@ -86,7 +86,7 @@ const navigation: NavigationGroup[] = [
         children: academicChildren,
       },
       { label: 'Subjects', to: '/subjects', icon: Library },
-      { label: 'Offerings', to: '/academic/subject-offerings', icon: BookOpenCheck },
+      { label: 'Class assignments', to: '/academic/subject-offerings', icon: BookOpenCheck },
       { label: 'Faculty', to: '/faculty', icon: GraduationCap },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],

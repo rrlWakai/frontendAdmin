@@ -1,5 +1,6 @@
 import type { ApiSuccessResponse } from '@/types/api'
 import type {
+  CurriculumSubjectFilters,
   SubjectOffering,
   SubjectOfferingDetail,
   SubjectOfferingFilters,
@@ -7,6 +8,8 @@ import type {
   SubjectOfferingOptions,
   SubjectOfferingPagination,
   SubjectOfferingStatus,
+  SubjectOfferingSubject,
+  SubjectOfferingSummary,
   SubjectOfferingUpdateInput,
 } from '@/types/subjectOffering'
 import { apiClient } from '@/services/api/client'
@@ -14,6 +17,7 @@ import { apiClient } from '@/services/api/client'
 interface SubjectOfferingDirectoryData {
   offerings: SubjectOffering[]
   pagination: SubjectOfferingPagination
+  summary: SubjectOfferingSummary | null
 }
 
 export async function fetchSubjectOfferings(
@@ -76,4 +80,15 @@ export async function updateSubjectOfferingStatus(
   )
 
   return data.data.subject_offering
+}
+
+export async function fetchCurriculumSubjects(
+  filters: CurriculumSubjectFilters,
+): Promise<SubjectOfferingSubject[]> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ subjects: SubjectOfferingSubject[] }>>(
+    '/academic/curriculum/subjects',
+    { params: filters },
+  )
+
+  return data.data.subjects
 }
