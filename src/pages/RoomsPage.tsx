@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, DoorOpen, Plus, Search } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, DoorOpen, Plus } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
-import { TextField } from '@/components/common/TextField'
 import { RoomDetailsDialog } from '@/components/rooms/RoomDetailsDialog'
 import { RoomFormDialog } from '@/components/rooms/RoomFormDialog'
 import { useAuth } from '@/hooks/useAuth'
@@ -18,36 +17,12 @@ import {
 } from '@/services/api/rooms'
 import type {
   Room,
-  RoomAvailabilityStatus,
   RoomDetail,
   RoomInput,
   RoomPagination,
   RoomStatus,
-  RoomType,
 } from '@/types/room'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
-
-const roomStatusOptions: Array<{ value: RoomStatus; label: string }> = [
-  { value: 'available', label: 'Available' },
-  { value: 'unavailable', label: 'Unavailable' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'retired', label: 'Retired' },
-]
-
-const availabilityOptions: Array<{ value: RoomAvailabilityStatus; label: string }> = [
-  { value: 'available', label: 'Available' },
-  { value: 'reserved', label: 'Reserved' },
-  { value: 'occupied', label: 'Occupied' },
-  { value: 'discrepancy', label: 'Discrepancy' },
-]
-
-const roomTypeOptions: Array<{ value: RoomType; label: string }> = [
-  { value: 'lecture', label: 'Lecture' },
-  { value: 'laboratory', label: 'Laboratory' },
-  { value: 'seminar', label: 'Seminar' },
-  { value: 'office', label: 'Office' },
-  { value: 'other', label: 'Other' },
-]
 
 function formatRoomType(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
@@ -102,13 +77,6 @@ export function RoomsPage() {
     per_page: 25,
     total: 0,
   })
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [roomConditionFilter, setRoomConditionFilter] = useState<RoomStatus | ''>('')
-  const [availabilityFilter, setAvailabilityFilter] = useState<RoomAvailabilityStatus | ''>('')
-  const [buildingFilter, setBuildingFilter] = useState('')
-  const [dateFilter, setDateFilter] = useState(localDate)
-  const [typeFilter, setTypeFilter] = useState<RoomType | ''>('')
   const [page, setPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -137,12 +105,6 @@ export function RoomsPage() {
       setError(null)
       try {
         const result = await fetchRooms({
-          search: search || undefined,
-          building: buildingFilter.trim() || undefined,
-          date: dateFilter || undefined,
-          availability_status: availabilityFilter || undefined,
-          room_status: roomConditionFilter || undefined,
-          room_type: typeFilter || undefined,
           page,
           per_page: 25,
         })
@@ -159,7 +121,7 @@ export function RoomsPage() {
     return () => {
       active = false
     }
-  }, [availabilityFilter, buildingFilter, dateFilter, page, refreshVersion, roomConditionFilter, search, typeFilter])
+  }, [page, refreshVersion])
 
   useEffect(() => {
     if (selectedRoomId === null) return
@@ -279,121 +241,6 @@ export function RoomsPage() {
 
       <Card>
         <CardBody>
-          <form
-            className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(14rem,1.3fr)_minmax(10rem,0.8fr)_10rem_11rem_11rem_11rem_auto]"
-            onSubmit={(event) => {
-              event.preventDefault()
-              setPage(1)
-              setSearch(searchInput.trim())
-              setSuccess(null)
-            }}
-          >
-            <TextField
-              label="Search rooms"
-              name="search"
-              type="search"
-              value={searchInput}
-              placeholder="Code, name, or building"
-              onChange={(event) => setSearchInput(event.target.value)}
-            />
-            <TextField
-              label="Building"
-              name="building"
-              value={buildingFilter}
-              placeholder="All buildings"
-              onChange={(event) => {
-                setPage(1)
-                setBuildingFilter(event.target.value)
-              }}
-            />
-            <TextField
-              label="Availability date"
-              name="date"
-              type="date"
-              value={dateFilter}
-              onChange={(event) => {
-                setPage(1)
-                setDateFilter(event.target.value)
-              }}
-            />
-            <div className="space-y-1.5">
-              <label htmlFor="room-availability-filter" className="block text-sm font-medium text-ink">
-                Availability
-              </label>
-              <select
-                id="room-availability-filter"
-                value={availabilityFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || availabilityOptions.some((option) => option.value === value)) {
-                    setAvailabilityFilter(value as RoomAvailabilityStatus | '')
-                  }
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All availability</option>
-                {availabilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="room-type-filter" className="block text-sm font-medium text-ink">
-                Room type
-              </label>
-              <select
-                id="room-type-filter"
-                value={typeFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || roomTypeOptions.some((option) => option.value === value)) {
-                    setTypeFilter(value as RoomType | '')
-                  }
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All room types</option>
-                {roomTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="room-condition-filter" className="block text-sm font-medium text-ink">
-                Room condition
-              </label>
-              <select
-                id="room-condition-filter"
-                value={roomConditionFilter}
-                onChange={(event) => {
-                  const value = event.target.value
-                  setPage(1)
-                  if (value === '' || roomStatusOptions.some((option) => option.value === value)) {
-                    setRoomConditionFilter(value as RoomStatus | '')
-                  }
-                }}
-                className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">All conditions</option>
-                {roomStatusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button type="submit" variant="outline" className="w-full md:w-auto">
-                <Search className="size-4" aria-hidden="true" />
-                Search
-              </Button>
-            </div>
-          </form>
-
           {error ? (
             <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               <p>{error}</p>
@@ -410,12 +257,7 @@ export function RoomsPage() {
               <EmptyState
                 icon={DoorOpen}
                 title="No rooms found"
-                description={search || buildingFilter || availabilityFilter || roomConditionFilter || typeFilter
-                  ? 'Try adjusting the search or filters.'
-                  : 'Create the first room to start building the schedule inventory.'}
-                action={canManage && !search && !buildingFilter && !availabilityFilter && !roomConditionFilter && !typeFilter ? (
-                  <Button onClick={() => setDialogRoom(null)}>Add room</Button>
-                ) : null}
+                description="Create the first room to start building the schedule inventory."
               />
             </div>
           ) : (
