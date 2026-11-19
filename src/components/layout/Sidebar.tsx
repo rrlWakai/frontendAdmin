@@ -1,8 +1,7 @@
-import { useId, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
+  BookOpen,
   CalendarDays,
-  ChevronDown,
   DoorOpen,
   GraduationCap,
   LayoutDashboard,
@@ -16,12 +15,6 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { Logo } from '@/components/layout/Logo'
 import { cn } from '@/utils/cn'
 
-interface NavigationChild {
-  label: string
-  to: string
-  end?: boolean
-}
-
 interface NavigationLink {
   label: string
   to: string
@@ -29,42 +22,14 @@ interface NavigationLink {
   end?: boolean
 }
 
-interface NavigationParent {
-  label: string
-  icon: LucideIcon
-  children: NavigationChild[]
-}
-
-type NavigationItem = NavigationLink | NavigationParent
-
 interface NavigationGroup {
   label: string
-  items: NavigationItem[]
-}
-
-function hasChildren(item: NavigationItem): item is NavigationParent {
-  return 'children' in item
+  items: NavigationLink[]
 }
 
 function isPathMatch(pathname: string, to: string, end?: boolean): boolean {
   return pathname === to || (!end && pathname.startsWith(`${to}/`))
 }
-
-function getBranchKey(item: NavigationParent, pathname: string): string {
-  const activeChild = item.children.find((child) =>
-    isPathMatch(pathname, child.to, child.end),
-  )
-
-  return `${item.label}-${activeChild?.to ?? 'inactive'}`
-}
-
-const academicChildren: NavigationChild[] = [
-  { label: 'Academic structure', to: '/academic', end: true },
-  { label: 'Academic terms', to: '/academic/terms' },
-  { label: 'Subjects', to: '/subjects' },
-  { label: 'Curriculum', to: '/academic/curriculum' },
-  { label: 'Class assignments', to: '/academic/subject-offerings' },
-]
 
 const navigation: NavigationGroup[] = [
   {
@@ -72,20 +37,21 @@ const navigation: NavigationGroup[] = [
     items: [{ label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard }],
   },
   {
-    label: 'Schedule',
-    items: [{ label: 'Schedule', to: '/scheduling', icon: CalendarDays }],
-  },
-  {
     label: 'Academic',
     items: [
-      {
-        label: 'Academic',
-        icon: GraduationCap,
-        children: academicChildren,
-      },
+      { label: 'Academic structure', to: '/academic', icon: GraduationCap, end: true },
+      { label: 'Academic terms', to: '/academic/terms', icon: CalendarDays },
+      { label: 'Subjects', to: '/subjects', icon: BookOpen },
+      { label: 'Curriculum', to: '/academic/curriculum', icon: BookOpen },
+      { label: 'Class assignments', to: '/academic/subject-offerings', icon: GraduationCap },
       { label: 'Faculty', to: '/faculty', icon: UsersRound },
+      { label: 'Students', to: '/students', icon: UserRound },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],
+  },
+  {
+    label: 'Scheduling',
+    items: [{ label: 'Intelligent Scheduling', to: '/scheduling', icon: CalendarDays }],
   },
   {
     label: 'Campus',
@@ -93,82 +59,9 @@ const navigation: NavigationGroup[] = [
   },
   {
     label: 'Administration',
-    items: [
-      { label: 'Users & access', to: '/users', icon: Users },
-      { label: 'Students', to: '/students', icon: UserRound },
-    ],
+    items: [{ label: 'Users & access', to: '/users', icon: Users }],
   },
 ]
-
-interface NavigationBranchProps {
-  item: NavigationParent
-  onNavigate?: () => void
-}
-
-function NavigationBranch({ item, onNavigate }: NavigationBranchProps) {
-  const location = useLocation()
-  const panelId = useId()
-  const hasActiveChild = item.children.some((child) =>
-    isPathMatch(location.pathname, child.to, child.end),
-  )
-  const [isOpen, setIsOpen] = useState(hasActiveChild)
-  const Icon = item.icon
-
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        className={cn(
-          'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70',
-          hasActiveChild
-            ? 'text-white'
-            : 'text-maroon-100/70 hover:bg-white/5 hover:text-white',
-        )}
-      >
-        <Icon
-          className="size-[18px] shrink-0 text-current opacity-90"
-          aria-hidden="true"
-        />
-        <span>{item.label}</span>
-        <ChevronDown
-          className={cn(
-            'ml-auto size-4 shrink-0 transition-transform duration-200',
-            isOpen && 'rotate-180',
-          )}
-          aria-hidden="true"
-        />
-      </button>
-
-      <ul
-        id={panelId}
-        className={cn('mt-1 space-y-1', !isOpen && 'hidden')}
-      >
-        {item.children.map((child) => (
-          <li key={child.to}>
-            <NavLink
-              to={child.to}
-              end={child.end}
-              onClick={onNavigate}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center rounded-xl py-2 pl-11 pr-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70',
-                  isActive
-                    ? 'bg-gold-500 text-maroon-900 shadow-sm'
-                    : 'text-maroon-100/70 hover:bg-white/5 hover:text-white',
-                )
-              }
-            >
-              {child.label}
-            </NavLink>
-          </li>
-        ))}
-      </ul>
-    </li>
-  )
-}
 
 interface SidebarProps {
   onNavigate?: () => void
@@ -215,17 +108,8 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
               </p>
               <ul className="space-y-1">
                 {group.items.map((item) => {
-                  if (hasChildren(item)) {
-                    return (
-                      <NavigationBranch
-                        key={getBranchKey(item, location.pathname)}
-                        item={item}
-                        onNavigate={onNavigate}
-                      />
-                    )
-                  }
-
                   const Icon = item.icon
+                  const isCurrent = isPathMatch(location.pathname, item.to, item.end)
 
                   return (
                     <li key={item.to}>
@@ -233,14 +117,12 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
                         to={item.to}
                         end={item.end}
                         onClick={onNavigate}
-                        className={({ isActive }) =>
-                          cn(
-                            'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-                            isActive
-                              ? 'bg-gold-500 text-maroon-900 shadow-sm'
-                              : 'text-maroon-100/70 hover:bg-white/5 hover:text-white',
-                          )
-                        }
+                        className={cn(
+                          'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                          isCurrent
+                            ? 'bg-gold-500 text-maroon-900 shadow-sm'
+                            : 'text-maroon-100/70 hover:bg-white/5 hover:text-white',
+                        )}
                       >
                         <Icon
                           className="size-[18px] shrink-0 text-current opacity-90"

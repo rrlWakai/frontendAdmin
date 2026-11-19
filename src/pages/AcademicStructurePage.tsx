@@ -15,11 +15,19 @@ type StructureData = {
   sections: AcademicSection[]
 }
 
+type SectionGroup = {
+  key: string
+  label: string
+  sections: AcademicSection[]
+}
+
 export function AcademicStructurePage() {
   const [data, setData] = useState<StructureData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [openPrograms, setOpenPrograms] = useState<Record<number, boolean>>({})
+  const [openPrograms, setOpenPrograms] = useState<Record<string, boolean>>({})
+  const [openLevels, setOpenLevels] = useState<Record<string, boolean>>({})
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     let active = true
@@ -38,7 +46,14 @@ export function AcademicStructurePage() {
           yearLevels: yearLevels.records,
           sections: sections.records,
         })
-        setOpenPrograms(Object.fromEntries(programs.records.map((program) => [program.id, true])))
+        setOpenPrograms(Object.fromEntries(programs.records.map((program) => [`program-${program.id}`, true])))
+        setOpenLevels(Object.fromEntries(
+          programs.records.flatMap((program) => yearLevels.records.map((level) => [
+            `level-${program.id}-${level.id}`,
+            level.level === 1,
+          ])),
+        ))
+        setOpenGroups({})
       })
       .catch((failure: unknown) => {
         if (active) setError(getApiErrorMessage(failure, 'Unable to load academic structure.'))
@@ -54,12 +69,16 @@ export function AcademicStructurePage() {
     [data?.yearLevels],
   )
 
+  function toggle(key: string, setter: (update: (current: Record<string, boolean>) => Record<string, boolean>) => void) {
+    setter((current) => ({ ...current, [key]: !(current[key] ?? false) }))
+  }
+
   return (
     <>
       <PageHeader
         eyebrow="Academic"
         title="Academic structure"
-        description="Manage programs, year levels, specializations, and sections as one connected structure. Academic terms remain managed separately."
+        description="One connected hierarchy for programs, year levels, specializations, and sections. Academic terms remain managed separately."
         actions={(
           <div className="flex flex-wrap gap-2">
             <Link className="inline-flex h-11 items-center gap-2 rounded-xl bg-maroon-600 px-4 text-sm font-medium text-white hover:bg-maroon-700" to="/academic/academic-years">
@@ -80,39 +99,96 @@ export function AcademicStructurePage() {
 
       {!loading && data?.programs.length ? (
         <div className="space-y-4">
+          <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-white px-4 py-3 text-sm">
+            <span className="font-medium text-ink">Manage records</span>
+            <span className="text-ink-muted">·</span>
+            <Link className="font-medium text-maroon-700 hover:underline" to="/academic/programs">Programs</Link>
+            <Link className="font-medium text-maroon-700 hover:underline" to="/academic/majors">Specializations</Link>
+            <Link className="font-medium text-maroon-700 hover:underline" to="/academic/year-levels">Year levels</Link>
+            <Link className="font-medium text-maroon-700 hover:underline" to="/academic/sections">Sections</Link>
+          </div>
+
           {data.programs.map((program) => {
             const majors = data.majors.filter((major) => major.program_id === program.id)
             const sections = data.sections.filter((section) => section.program_id === program.id)
-            const isOpen = openPrograms[program.id] ?? true
+            const programKey = `program-${program.id}`
+            const isProgramOpen = openPrograms[programKey] ?? true
             return (
               <Card key={program.id} className="overflow-hidden">
-                <button type="button" className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-surface-soft" onClick={() => setOpenPrograms((current) => ({ ...current, [program.id]: !isOpen }))} aria-expanded={isOpen}>
-                  <span><span className="font-semibold text-ink">{program.code} — {program.name}</span><span className="ml-2 text-xs text-ink-muted">{sections.length} section{sections.length === 1 ? '' : 's'} · {majors.length} specialization{majors.length === 1 ? '' : 's'}</span></span>
-                  <ChevronDown className={`size-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                <button type="button" className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-surface-soft" onClick={() => toggle(programKey, setOpenPrograms)} aria-expanded={isProgramOpen}>
+                  <span>
+                    <span className="font-semibold text-ink">{program.code} — {program.name}</span>
+                    <span className="ml-2 text-xs text-ink-muted">{sections.length} section{sections.length === 1 ? '' : 's'} · {majors.length} specialization{majors.length === 1 ? '' : 's'}</span>
+                  </span>
+                  <ChevronDown className={`size-5 transition-transform ${isProgramOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
-                {isOpen ? (
+                {isProgramOpen ? (
                   <CardBody className="border-t border-line">
-                    <div className="mb-4 flex flex-wrap gap-2 text-sm">
-                      <Link className="font-medium text-maroon-700 hover:underline" to="/academic/programs">Manage programs</Link>
-                      <span className="text-ink-muted">·</span>
-                      <Link className="font-medium text-maroon-700 hover:underline" to="/academic/majors">Manage specializations</Link>
-                      <span className="text-ink-muted">·</span>
-                      <Link className="font-medium text-maroon-700 hover:underline" to="/academic/year-levels">Manage year levels</Link>
-                      <span className="text-ink-muted">·</span>
-                      <Link className="font-medium text-maroon-700 hover:underline" to="/academic/sections">Manage sections</Link>
-                    </div>
                     <div className="space-y-3">
                       {activeLevels.map((level) => {
+                        const levelKey = `level-${program.id}-${level.id}`
+                        const isLevelOpen = openLevels[levelKey] ?? true
                         const levelSections = sections.filter((section) => section.year_level_id === level.id)
-                        const levelMajors = level.level >= 3 ? majors : []
+                        const groups: SectionGroup[] = level.level >= 3
+                          ? [
+                              ...majors.map((major) => ({
+                                key: `group-${program.id}-${level.id}-major-${major.id}`,
+                                label: `${major.code} — ${major.name}`,
+                                sections: levelSections.filter((section) => section.major_id === major.id),
+                              })),
+                              {
+                                key: `group-${program.id}-${level.id}-common`,
+                                label: 'Common curriculum',
+                                sections: levelSections.filter((section) => section.major_id === null),
+                              },
+                            ]
+                          : [{
+                              key: `group-${program.id}-${level.id}-common`,
+                              label: 'Common curriculum',
+                              sections: levelSections,
+                            }]
+
                         return (
                           <div key={level.id} className="rounded-lg border border-line bg-surface-soft p-4">
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
-                              <h2 className="font-semibold text-ink">{level.name}</h2>
-                              <span className="text-xs text-ink-muted">{levelSections.length} section{levelSections.length === 1 ? '' : 's'}</span>
-                            </div>
-                            {level.level >= 3 && levelMajors.length ? <p className="mt-2 text-xs text-ink-muted">Applicable specializations: {levelMajors.map((major) => major.code).join(', ')}</p> : null}
-                            {levelSections.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{levelSections.map((section) => <div key={section.id} className="rounded-md border border-line bg-white px-3 py-2 text-sm"><p className="font-medium text-ink">{section.code}</p><p className="mt-1 text-xs text-ink-muted">{section.major?.code ?? 'Common curriculum'} · Capacity {section.capacity ?? 'Not set'}</p></div>)}</div> : <p className="mt-3 text-sm text-ink-muted">No sections configured for this year level.</p>}
+                            <button type="button" className="flex w-full items-center justify-between gap-2 text-left" onClick={() => toggle(levelKey, setOpenLevels)} aria-expanded={isLevelOpen}>
+                              <span className="flex flex-wrap items-baseline gap-2">
+                                <span className="font-semibold text-ink">{level.name}</span>
+                                <span className="text-xs text-ink-muted">{levelSections.length} section{levelSections.length === 1 ? '' : 's'}</span>
+                              </span>
+                              <ChevronDown className={`size-4 transition-transform ${isLevelOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                            </button>
+                            {isLevelOpen ? (
+                              <div className="mt-3 space-y-2">
+                                {groups.map((group) => {
+                                  const isGroupOpen = openGroups[group.key] ?? group.sections.length > 0
+                                  return (
+                                    <div key={group.key} className="rounded-md border border-line bg-white">
+                                      <button type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left" onClick={() => toggle(group.key, setOpenGroups)} aria-expanded={isGroupOpen}>
+                                        <span className="text-sm font-medium text-ink">{group.label}</span>
+                                        <span className="flex items-center gap-2 text-xs text-ink-muted">
+                                          {group.sections.length} section{group.sections.length === 1 ? '' : 's'}
+                                          <ChevronDown className={`size-4 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                        </span>
+                                      </button>
+                                      {isGroupOpen ? (
+                                        group.sections.length ? (
+                                          <div className="grid gap-2 border-t border-line p-3 sm:grid-cols-2 lg:grid-cols-3">
+                                            {group.sections.map((section) => (
+                                              <div key={section.id} className="rounded-md border border-line bg-surface-soft px-3 py-2 text-sm">
+                                                <p className="font-medium text-ink">{section.code}</p>
+                                                <p className="mt-1 text-xs text-ink-muted">Capacity {section.capacity ?? 'Not set'}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="border-t border-line px-3 py-2 text-xs text-ink-muted">No sections configured for this specialization.</p>
+                                        )
+                                      ) : null}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : null}
                           </div>
                         )
                       })}

@@ -39,7 +39,7 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
   resource: 'curriculum-requirements',
   title: 'Curriculum',
   description:
-    'Map catalog subjects to program, year level, semester, and major scope. These mappings validate class assignments for scheduling; they never create class assignments automatically.',
+    'Map catalog subjects to program, year level, semester, and optional major scope. Classification is derived from the selected major. These mappings validate class assignments for scheduling; they never create class assignments automatically.',
   singular: 'Curriculum mapping',
   searchPlaceholder: 'Requirement type, semester, or classification',
   emptyDescription: 'Curriculum mappings will appear here when subjects are assigned to a curriculum scope.',
@@ -116,19 +116,9 @@ const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
       options: () => semesters,
     },
     {
-      name: 'classification',
-      label: 'Classification',
-      type: 'select',
-      required: true,
-      defaultValue: 'common',
-      options: () => classifications,
-    },
-    {
       name: 'major_id',
-      label: 'Major (major-specific only)',
+      label: 'Major (optional; determines scope)',
       type: 'select',
-      requiredWhen: (values) => values.classification === 'major',
-      disabledWhen: (values) => values.classification !== 'major',
       options: (choices, values) => choices.majors
         .filter((major) => String(major.program_id) === values.program_id)
         .map((major) => ({

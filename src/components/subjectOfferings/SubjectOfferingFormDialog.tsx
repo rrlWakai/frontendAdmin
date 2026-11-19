@@ -9,7 +9,6 @@ import type {
   SubjectOfferingOptions,
   SubjectOfferingSubject,
   SubjectOfferingUpdateInput,
-  SubjectOfferingYearLevel,
 } from '@/types/subjectOffering'
 import { getApiErrorMessage, getApiFieldErrors } from '@/utils/apiError'
 
@@ -22,8 +21,6 @@ interface SubjectOfferingFormDialogProps {
 }
 
 interface SubjectOfferingFormValues {
-  program_id: string
-  year_level_id: string
   section_id: string
   subject_id: string
   expected_students: string
@@ -41,8 +38,6 @@ export function SubjectOfferingFormDialog({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const structuralLocked = offering !== null && offering.status !== 'draft'
   const [values, setValues] = useState<SubjectOfferingFormValues>(() => ({
-    program_id: offering ? String(offering.section.program_id) : '',
-    year_level_id: offering ? String(offering.section.year_level_id) : '',
     section_id: offering ? String(offering.section_id) : '',
     subject_id: offering ? String(offering.subject_id) : '',
     expected_students: offering?.expected_students === null || offering?.expected_students === undefined
@@ -58,25 +53,11 @@ export function SubjectOfferingFormDialog({
 
   const term = options.terms.find((item) => item.id === termId)
   const termSections = options.sections.filter((section) => section.academic_term_id === termId)
-  const programs = options.programs.filter((program) => (
-    termSections.some((section) => section.program_id === program.id)
-    || offering?.section.program_id === program.id
-  ))
-  const yearLevels = Array.from(
-    new Map(
-      termSections
-        .filter((section) => String(section.program_id) === values.program_id)
-        .map((section) => [section.year_level_id, section.year_level]),
-    ).values(),
-  ).filter((yearLevel): yearLevel is SubjectOfferingYearLevel => Boolean(yearLevel))
   const sections = termSections.filter((section) => (
-    String(section.program_id) === values.program_id
-    && String(section.year_level_id) === values.year_level_id
-    && (section.status === 'active' || section.id === offering?.section_id)
+    section.status === 'active' || section.id === offering?.section_id
   ))
   const selectedSection = options.sections.find((section) => String(section.id) === values.section_id)
-  const selectedProgram = options.programs.find((program) => String(program.id) === values.program_id)
-  const selectedYearLevel = yearLevels.find((yearLevel) => String(yearLevel.id) === values.year_level_id)
+  const selectedProgram = options.programs.find((program) => program.id === selectedSection?.program_id)
   const isOriginalSection = Boolean(offering && selectedSection?.id === offering.section_id)
   const subjectOptions = [...curriculumSubjects]
   if (
@@ -112,7 +93,7 @@ export function SubjectOfferingFormDialog({
   }, [])
 
   useEffect(() => {
-    if (!selectedSection || !selectedProgram || !selectedYearLevel || !term?.term) {
+    if (!selectedSection || !term?.term) {
       setCurriculumSubjects([])
       setCurriculumError(null)
       setIsCurriculumLoading(false)
@@ -124,8 +105,8 @@ export function SubjectOfferingFormDialog({
     setCurriculumError(null)
 
     fetchCurriculumSubjects({
-      program_id: Number(values.program_id),
-      year_level_id: Number(values.year_level_id),
+      program_id: selectedSection.program_id,
+      year_level_id: selectedSection.year_level_id,
       semester: term.term,
       major_id: selectedSection.major_id ?? undefined,
     })
@@ -149,7 +130,7 @@ export function SubjectOfferingFormDialog({
     return () => {
       active = false
     }
-  }, [selectedProgram, selectedSection, selectedYearLevel, term?.term, values.program_id, values.year_level_id])
+  }, [selectedSection, term?.term])
 
   function update<K extends keyof SubjectOfferingFormValues>(
     field: K,
@@ -157,35 +138,6 @@ export function SubjectOfferingFormDialog({
   ) {
     setValues((current) => ({ ...current, [field]: value }))
     setFieldErrors((current) => ({ ...current, [field]: [] }))
-    setError(null)
-  }
-
-  function updateProgram(programId: string) {
-    setValues((current) => ({
-      ...current,
-      program_id: programId,
-      year_level_id: '',
-      section_id: '',
-      subject_id: '',
-    }))
-    setCurriculumSubjects([])
-    setCurriculumError(null)
-    setIsCurriculumLoading(false)
-    setFieldErrors((current) => ({ ...current, program_id: [], year_level_id: [], section_id: [], subject_id: [] }))
-    setError(null)
-  }
-
-  function updateYearLevel(yearLevelId: string) {
-    setValues((current) => ({
-      ...current,
-      year_level_id: yearLevelId,
-      section_id: '',
-      subject_id: '',
-    }))
-    setCurriculumSubjects([])
-    setCurriculumError(null)
-    setIsCurriculumLoading(false)
-    setFieldErrors((current) => ({ ...current, year_level_id: [], section_id: [], subject_id: [] }))
     setError(null)
   }
 
@@ -209,8 +161,6 @@ export function SubjectOfferingFormDialog({
 
     if (!structuralLocked) {
       const missingFields: Record<string, string[]> = {}
-      if (!values.program_id) missingFields.program_id = ['Choose a program.']
-      if (!values.year_level_id) missingFields.year_level_id = ['Choose a year level.']
       if (!values.section_id) missingFields.section_id = ['Choose a section.']
       if (!values.subject_id) missingFields.subject_id = ['Choose an eligible subject.']
 
@@ -315,65 +265,14 @@ export function SubjectOfferingFormDialog({
             </p>
           </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="offering-program" className="block text-sm font-medium text-ink">
-              Program
-            </label>
-            <select
-              id="offering-program"
-              required
-              disabled={structuralLocked}
-              value={values.program_id}
-              aria-invalid={Boolean(fieldErrors.program_id?.[0])}
-              onChange={(event) => updateProgram(event.target.value)}
-              className={selectClass}
-            >
-              <option value="">Choose a program</option>
-              {programs.map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.code} - {program.name}
-                  {program.status !== 'active' ? ` (${program.status})` : ''}
-                </option>
-              ))}
-            </select>
-            {fieldErrors.program_id?.[0] ? (
-              <p className="text-xs font-medium text-red-600">{fieldErrors.program_id[0]}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="offering-year-level" className="block text-sm font-medium text-ink">
-              Year level
-            </label>
-            <select
-              id="offering-year-level"
-              required
-              disabled={structuralLocked || !values.program_id}
-              value={values.year_level_id}
-              aria-invalid={Boolean(fieldErrors.year_level_id?.[0])}
-              onChange={(event) => updateYearLevel(event.target.value)}
-              className={selectClass}
-            >
-              <option value="">Choose a year level</option>
-              {yearLevels.map((yearLevel) => (
-                <option key={yearLevel.id} value={yearLevel.id}>
-                  {yearLevel.name}
-                </option>
-              ))}
-            </select>
-            {fieldErrors.year_level_id?.[0] ? (
-              <p className="text-xs font-medium text-red-600">{fieldErrors.year_level_id[0]}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 sm:col-span-2">
             <label htmlFor="offering-section" className="block text-sm font-medium text-ink">
               Section
             </label>
             <select
               id="offering-section"
               required
-              disabled={structuralLocked || !values.year_level_id}
+              disabled={structuralLocked}
               value={values.section_id}
               aria-invalid={Boolean(fieldErrors.section_id?.[0])}
               onChange={(event) => updateSection(event.target.value)}
@@ -383,25 +282,36 @@ export function SubjectOfferingFormDialog({
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>
                   {section.code}
-                  {section.name ? ` - ${section.name}` : ''}
+                  {section.program ? ` · ${section.program.code}` : ''}
+                  {section.year_level ? ` · ${section.year_level.name}` : ''}
                   {section.status !== 'active' ? ` (${section.status})` : ''}
                 </option>
               ))}
             </select>
             {fieldErrors.section_id?.[0] ? (
               <p className="text-xs font-medium text-red-600">{fieldErrors.section_id[0]}</p>
-            ) : !values.program_id ? (
-              <p className="text-xs text-ink-muted">Choose a program first.</p>
-            ) : !values.year_level_id ? (
-              <p className="text-xs text-ink-muted">Choose a year level to see matching sections.</p>
             ) : sections.length === 0 ? (
-              <p className="text-xs text-ink-muted">No active sections match this program and year level.</p>
-            ) : selectedSection?.major ? (
-              <p className="text-xs text-ink-muted">Major: {selectedSection.major.name}</p>
+              <p className="text-xs text-ink-muted">No active sections are configured for this term.</p>
             ) : null}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 sm:col-span-2">
+            <p className="text-sm font-medium text-ink">Section context</p>
+            <div className="rounded-lg border border-line bg-surface-soft px-3 py-2 text-sm text-ink-muted">
+              {selectedSection ? (
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <span>{selectedProgram?.code ?? 'Program not set'}</span>
+                  <span>{selectedSection.year_level?.name ?? 'Year level not set'}</span>
+                  <span>{selectedSection.major?.name ?? 'Common curriculum'}</span>
+                  <span>Capacity {selectedSection.capacity ?? 'not set'}</span>
+                </div>
+              ) : (
+                <span>Choose a section to derive its program, year level, and specialization.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-2">
             <label htmlFor="offering-subject" className="block text-sm font-medium text-ink">
               Subject
             </label>
@@ -451,7 +361,7 @@ export function SubjectOfferingFormDialog({
               </p>
             ) : (
               <p className="text-xs text-ink-muted">
-                Eligible subjects come from {selectedProgram?.code ?? 'the program'} · {selectedYearLevel?.name ?? 'this year level'} · {term?.term ?? 'this semester'}.
+                Eligible subjects come from {selectedProgram?.code ?? 'the program'} · {selectedSection.year_level?.name ?? 'this year level'} · {term?.term ?? 'this semester'}.
               </p>
             )}
           </div>

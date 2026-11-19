@@ -101,7 +101,7 @@ const routes: RouteObject[] = [
           {
             path: 'scheduling',
             element: <SchedulingPage />,
-            handle: { title: 'Scheduling' } satisfies RouteHandle,
+            handle: { title: 'Intelligent Scheduling' } satisfies RouteHandle,
           },
           {
             path: 'faculty',
