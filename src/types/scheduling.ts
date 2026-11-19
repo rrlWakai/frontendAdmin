@@ -53,6 +53,7 @@ export interface SchedulingOptions {
 }
 
 export type SchedulingReadinessSeverity = 'blocking' | 'warning' | 'info'
+export type SchedulingReadinessLayer = 'integration' | 'generation_data' | 'lifecycle'
 
 export interface SchedulingReadinessIssue {
   severity: SchedulingReadinessSeverity
@@ -62,6 +63,15 @@ export interface SchedulingReadinessIssue {
   entity_type: string | null
   entity_id: string | null
   related_ids: string[]
+  layer: SchedulingReadinessLayer
+}
+
+export interface SchedulingReadinessLayerSummary {
+  ready: boolean
+  blocking_count: number
+  warning_count: number
+  info_count: number
+  issues: SchedulingReadinessIssue[]
 }
 
 export interface SchedulingReadiness {
@@ -75,6 +85,9 @@ export interface SchedulingReadiness {
     ends_on: string | null
   }
   ready: boolean
+  integration_ready: boolean
+  generation_data_ready: boolean
+  lifecycle_ready: boolean
   generation_available: boolean
   blocking_count: number
   warning_count: number
@@ -91,6 +104,7 @@ export interface SchedulingReadiness {
     open_conflicts: number
   }
   issues: SchedulingReadinessIssue[]
+  layers: Record<SchedulingReadinessLayer, SchedulingReadinessLayerSummary>
   capabilities: Record<string, boolean>
   inspected_at: string
 }
@@ -213,4 +227,225 @@ export interface ScheduleInput {
 export interface SchedulePagination {
   schedules: ScheduleRecord[]
   pagination: AcademicPagination
+}
+
+export type SchedulerSolverStatus = 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN'
+export type SchedulerValidationStatus = 'passed' | 'failed' | 'not_run'
+
+export interface SchedulerProfessorAssignment {
+  subject_offering_id: string
+  faculty_assignment_id: string
+  assignment_role: string
+}
+
+export interface SchedulerAssignment {
+  meeting_instance_id: string
+  source_requirement_id: string
+  occurrence_number: number
+  subject_offering_ids: string[]
+  section_ids: string[]
+  professor_id: string
+  professor_assignments: SchedulerProfessorAssignment[]
+  is_primary: boolean
+  room_id: string | null
+  meeting_type: ScheduleType
+  modality: ScheduleModality
+  day_of_week: number
+  start_time: string
+  end_time: string
+  duration_minutes: number
+}
+
+export interface SchedulerDiagnostic {
+  code: string
+  message: string
+  evidence: string
+  meeting_requirement_ids: string[]
+  related_entity_ids: string[]
+}
+
+export interface SchedulerWarning {
+  code: string
+  message: string
+  related_entity_ids?: string[] | null
+}
+
+export interface SchedulerWorkloadMetric {
+  professor_id: string
+  employment_type: string
+  assigned_teaching_minutes: number
+  weekly_target_minutes: number | null
+  signed_target_deviation_minutes: number | null
+  absolute_target_deviation_minutes: number | null
+}
+
+export interface SchedulerValidationSummary {
+  independent_validation_status: SchedulerValidationStatus
+  scheduled_meeting_count: number
+  required_mandatory_meeting_count: number
+  desired_meeting_count: number
+  required_offering_count: number
+  represented_offering_count: number
+  complete_candidate: boolean
+  validation_errors: string[]
+}
+
+export interface SchedulerPlacementMetrics {
+  comparable_meeting_count: number
+  retained_placement_count: number
+  changed_placement_count: number
+  unmatched_baseline_schedule_count: number
+}
+
+export interface SchedulerFullTimeDistribution {
+  minimum_assigned_minutes: number
+  maximum_assigned_minutes: number
+  spread_minutes: number
+}
+
+export interface SchedulingSolveResult {
+  contract_version: string
+  generation_id: string
+  snapshot_sha256: string
+  correlation_id: string
+  solver_status: SchedulerSolverStatus
+  started_at: string
+  completed_at: string
+  solver_execution_ms: number
+  objective_value?: number | null
+  best_bound?: number | null
+  optimality_proven: boolean
+  time_limit_reached: boolean
+  assignments: SchedulerAssignment[]
+  validation_summary: SchedulerValidationSummary
+  full_time_distribution?: SchedulerFullTimeDistribution | null
+  placement_metrics: SchedulerPlacementMetrics
+  unscheduled_mandatory_meeting_ids?: string[] | null
+  diagnostics: SchedulerDiagnostic[]
+  workload_metrics: SchedulerWorkloadMetric[]
+  warnings: SchedulerWarning[]
+}
+
+export interface SchedulingSolveInput {
+  academic_term_id: number
+  correlation_id?: string
+}
+
+export type SchedulingConfigurationStatus = 'draft' | 'approved' | 'superseded'
+
+export interface SchedulingTimeGridSlot {
+  id: number
+  start_time: string
+  end_time: string
+  label: string | null
+}
+
+export interface SchedulingTimeGridDay {
+  id: number
+  day_of_week: number
+  operating_start: string
+  operating_end: string
+  slots: SchedulingTimeGridSlot[]
+}
+
+export interface SchedulingTimeGrid {
+  id: number
+  academic_term_id: number
+  version: number
+  status: SchedulingConfigurationStatus
+  timezone: string
+  approved_at: string | null
+  approved_by: { id: number; name: string } | null
+  notes: string | null
+  days: SchedulingTimeGridDay[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SchedulingTimeGridIndex {
+  current: SchedulingTimeGrid | null
+  history: SchedulingTimeGrid[]
+}
+
+export interface SchedulingTimeGridDayInput {
+  day_of_week: number
+  operating_start: string
+  operating_end: string
+  slots: Array<{ start_time: string; end_time: string; label?: string | null }>
+}
+
+export interface SchedulingTimeGridInput {
+  academic_term_id?: number
+  timezone: string
+  notes?: string | null
+  days: SchedulingTimeGridDayInput[]
+}
+
+export interface SchedulingMeetingRequirement {
+  id: number
+  meeting_type: ScheduleType
+  frequency_per_week: number
+  duration_minutes: number
+  modality: ScheduleModality
+  required_room_type: string | null
+  mandatory: boolean
+  allowed_days: number[] | null
+  valid_start_times: string[] | null
+}
+
+export interface SchedulingMeetingPlan {
+  id: number
+  academic_term_id: number
+  subject_offering_id: number
+  version: number
+  status: SchedulingConfigurationStatus
+  approved_at: string | null
+  approved_by: { id: number; name: string } | null
+  notes: string | null
+  requirements: SchedulingMeetingRequirement[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SchedulingConfigurationOffering {
+  id: number
+  section_id: number
+  subject_id: number
+  expected_students: number | null
+  subject: {
+    id: number
+    code: string
+    title: string
+    lecture_hours: number | null
+    lab_hours: number | null
+  } | null
+  section: { id: number; code: string; name: string | null } | null
+}
+
+export interface SchedulingMeetingPlanEntry {
+  offering: SchedulingConfigurationOffering
+  current: SchedulingMeetingPlan | null
+  history: SchedulingMeetingPlan[]
+}
+
+export interface SchedulingMeetingPlanIndex {
+  plans: SchedulingMeetingPlanEntry[]
+  offerings: SchedulingConfigurationOffering[]
+}
+
+export interface SchedulingMeetingRequirementInput {
+  meeting_type: ScheduleType
+  frequency_per_week: number
+  duration_minutes: number
+  modality: ScheduleModality
+  required_room_type?: string | null
+  mandatory: boolean
+  allowed_days?: number[] | null
+  valid_start_times?: string[] | null
+}
+
+export interface SchedulingMeetingPlanInput {
+  subject_offering_id: number
+  notes?: string | null
+  requirements: SchedulingMeetingRequirementInput[]
 }

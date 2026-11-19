@@ -325,6 +325,7 @@ export function SubjectOfferingsPage() {
     )
 
     return readiness?.issues.filter((issue) => {
+      if (issue.layer === 'lifecycle') return false
       if (issue.entity_type === 'academic_term') return true
       if (issue.entity_type === 'subject_offering') return issue.entity_id === offeringId
       if (issue.entity_type === 'professor') {

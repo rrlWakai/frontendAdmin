@@ -8,8 +8,16 @@ import type {
   ScheduleFilters,
   ScheduleInput,
   ScheduleRecord,
+  SchedulingMeetingPlan,
+  SchedulingMeetingPlanIndex,
+  SchedulingMeetingPlanInput,
   SchedulingOptions,
   SchedulingReadiness,
+  SchedulingSolveInput,
+  SchedulingSolveResult,
+  SchedulingTimeGrid,
+  SchedulingTimeGridIndex,
+  SchedulingTimeGridInput,
 } from '@/types/scheduling'
 import { apiClient } from '@/services/api/client'
 
@@ -30,8 +38,16 @@ export async function fetchSchedulingReadiness(termId: number): Promise<Scheduli
   return data.data.readiness
 }
 
-export async function fetchSchedules(filters: ScheduleFilters): Promise<ScheduleDirectory> {
-  const { data } = await apiClient.get<ApiSuccessResponse<ScheduleDirectory>>('/schedules', {
+export async function solveScheduling(input: SchedulingSolveInput): Promise<SchedulingSolveResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ result: SchedulingSolveResult }>>(
+    '/scheduling/solve',
+    input,
+  )
+
+  return data.data.result
+}
+
+export async function fetchSchedules(filters: ScheduleFilters): Promise<ScheduleDirectory> {  const { data } = await apiClient.get<ApiSuccessResponse<ScheduleDirectory>>('/schedules', {
     params: filters,
   })
 
@@ -167,4 +183,110 @@ export async function previewScheduleConflicts(id: number): Promise<ScheduleConf
   )
 
   return data.data.conflicts
+}
+
+export async function fetchSchedulingTimeGrid(termId: number): Promise<SchedulingTimeGridIndex> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ configuration: SchedulingTimeGridIndex }>>(
+    '/scheduling/configuration/time-grid',
+    { params: { academic_term_id: termId } },
+  )
+
+  return data.data.configuration
+}
+
+export async function createSchedulingTimeGrid(
+  input: SchedulingTimeGridInput & { academic_term_id: number },
+): Promise<SchedulingTimeGrid> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ time_grid: SchedulingTimeGrid }>>(
+    '/scheduling/configuration/time-grids',
+    input,
+  )
+
+  return data.data.time_grid
+}
+
+export async function updateSchedulingTimeGrid(
+  id: number,
+  input: SchedulingTimeGridInput,
+): Promise<SchedulingTimeGrid> {
+  const { data } = await apiClient.patch<ApiSuccessResponse<{ time_grid: SchedulingTimeGrid }>>(
+    `/scheduling/configuration/time-grids/${id}`,
+    input,
+  )
+
+  return data.data.time_grid
+}
+
+export async function deleteSchedulingTimeGrid(id: number): Promise<void> {
+  await apiClient.delete(`/scheduling/configuration/time-grids/${id}`)
+}
+
+export async function approveSchedulingTimeGrid(id: number): Promise<SchedulingTimeGrid> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ time_grid: SchedulingTimeGrid }>>(
+    `/scheduling/configuration/time-grids/${id}/approve`,
+  )
+
+  return data.data.time_grid
+}
+
+export async function reviseSchedulingTimeGrid(id: number): Promise<SchedulingTimeGrid> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ time_grid: SchedulingTimeGrid }>>(
+    `/scheduling/configuration/time-grids/${id}/revise`,
+  )
+
+  return data.data.time_grid
+}
+
+export async function fetchSchedulingMeetingPlans(
+  termId: number,
+): Promise<SchedulingMeetingPlanIndex> {
+  const { data } = await apiClient.get<ApiSuccessResponse<SchedulingMeetingPlanIndex>>(
+    '/scheduling/configuration/meeting-plans',
+    { params: { academic_term_id: termId } },
+  )
+
+  return data.data
+}
+
+export async function createSchedulingMeetingPlan(
+  input: SchedulingMeetingPlanInput,
+): Promise<SchedulingMeetingPlan> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ meeting_plan: SchedulingMeetingPlan }>>(
+    '/scheduling/configuration/meeting-plans',
+    input,
+  )
+
+  return data.data.meeting_plan
+}
+
+export async function updateSchedulingMeetingPlan(
+  id: number,
+  input: SchedulingMeetingPlanInput,
+): Promise<SchedulingMeetingPlan> {
+  const { data } = await apiClient.patch<ApiSuccessResponse<{ meeting_plan: SchedulingMeetingPlan }>>(
+    `/scheduling/configuration/meeting-plans/${id}`,
+    input,
+  )
+
+  return data.data.meeting_plan
+}
+
+export async function deleteSchedulingMeetingPlan(id: number): Promise<void> {
+  await apiClient.delete(`/scheduling/configuration/meeting-plans/${id}`)
+}
+
+export async function approveSchedulingMeetingPlan(id: number): Promise<SchedulingMeetingPlan> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ meeting_plan: SchedulingMeetingPlan }>>(
+    `/scheduling/configuration/meeting-plans/${id}/approve`,
+  )
+
+  return data.data.meeting_plan
+}
+
+export async function reviseSchedulingMeetingPlan(id: number): Promise<SchedulingMeetingPlan> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ meeting_plan: SchedulingMeetingPlan }>>(
+    `/scheduling/configuration/meeting-plans/${id}/revise`,
+  )
+
+  return data.data.meeting_plan
 }

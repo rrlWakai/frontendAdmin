@@ -17,10 +17,12 @@ import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { fetchProfessor } from '@/services/api/faculty'
+import { SchedulingConfigurationStage } from '@/components/scheduling/SchedulingConfigurationStage'
 import {
   fetchOfferingFacultyAssignments,
   fetchSchedulingReadiness,
   fetchSchedules,
+  solveScheduling,
 } from '@/services/api/scheduling'
 import type { AcademicTerm } from '@/types/academic'
 import type {
@@ -28,15 +30,14 @@ import type {
   ScheduleRecord,
   SchedulingOptions,
   SchedulingReadiness,
+  SchedulingSolveResult,
 } from '@/types/scheduling'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { cn } from '@/utils/cn'
 
-type WorkspaceStage = 'overview' | 'generation' | 'review' | 'approval'
+type WorkspaceStage = 'overview' | 'configuration' | 'generation' | 'review' | 'approval'
 type ReadinessState = 'ready' | 'warning' | 'blocked' | 'checking' | 'info'
 type BadgeTone = 'neutral' | 'success' | 'warning' | 'info' | 'danger'
-
-const GENERATION_SERVICE_CONNECTED = false
 
 interface AssignmentReadiness {
   checkedSignature: string
@@ -180,6 +181,14 @@ export function IntelligentScheduleWorkspace({
   const [keepDay, setKeepDay] = useState(true)
   const [keepStartTime, setKeepStartTime] = useState(true)
   const [keepRoom, setKeepRoom] = useState(true)
+  const [solving, setSolving] = useState(false)
+  const [solveError, setSolveError] = useState<string | null>(null)
+  const [candidate, setCandidate] = useState<SchedulingSolveResult | null>(null)
+
+  useEffect(() => {
+    setCandidate(null)
+    setSolveError(null)
+  }, [termId])
 
   const offeringSignature = options?.offerings
     .map((offering) => offering.id)
@@ -381,9 +390,23 @@ export function IntelligentScheduleWorkspace({
         ? `Assignment results for ${assignmentReadiness.checkedOfferings} class assignments are outdated. Recheck assignments for the current term.`
         : `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary class assignment.`
 
-  const curriculumIssues = readiness?.issues.filter((issue) => (
+  const readinessIssues = readiness?.issues ?? []
+  const readinessIssue = (code: string) => readinessIssues.find((issue) => issue.code === code)
+  const timeGridIssue = readinessIssue('time_grid_not_configured')
+  const meetingPlanIssue = readinessIssue('meeting_plans_not_configured')
+  const fullTimePolicyIssue = readinessIssue('full_time_workday_policy_not_configured')
+  const partTimeTargetIssue = readinessIssue('part_time_targets_not_configured')
+  const roomConfigurationIssue = readinessIssue('room_configuration_invalid')
+  const usableRoomsIssue = readinessIssue('usable_rooms_missing') ?? readinessIssue('available_rooms_missing')
+  const combinedClassesIssue = readinessIssue('combined_classes_not_configured')
+  const publishedBaselineIssue = readinessIssue('published_baseline_unlinked')
+  const meetingBlockingCount = (readiness?.layers.generation_data.issues ?? [])
+    .filter((issue) => issue.category === 'meetings' && issue.severity === 'blocking')
+    .length
+
+  const curriculumIssues = readinessIssues.filter((issue) => (
     issue.code === 'offering_subject_not_in_curriculum' || issue.code.startsWith('curriculum_')
-  )) ?? []
+  ))
   const curriculumBlockingCount = curriculumIssues.filter((issue) => issue.severity === 'blocking').length
   const curriculumWarningCount = curriculumIssues.filter((issue) => issue.severity === 'warning').length
   const missingOfferingScopes = curriculumIssues.filter((issue) => issue.code === 'curriculum_offering_missing').length
@@ -477,15 +500,23 @@ export function IntelligentScheduleWorkspace({
 
   const meetingChecks: ReadinessCheck[] = [
     {
-      title: 'Lecture and laboratory meeting plans',
-      state: 'blocked',
-      detail: 'Meeting frequency, duration, and meeting type are not available yet.',
-      link: { to: '/academic/subject-offerings', label: 'Review class assignments' },
+      title: 'Approved term time grid',
+      state: readinessLoading ? 'checking' : readinessError ? 'blocked' : timeGridIssue ? 'blocked' : 'ready',
+      detail: readinessLoading
+        ? 'Checking the approved term time grid…'
+        : readinessError
+          ? readinessError
+          : timeGridIssue?.message ?? 'An approved term time grid is available for applicable days, operating hours, timezone, and valid start times.',
     },
     {
-      title: 'Frequency, duration, and required room type',
-      state: 'blocked',
-      detail: 'Approved meeting requirements must come from class assignment data. Subject catalog hours are not treated as a meeting plan.',
+      title: 'Lecture and laboratory meeting plans',
+      state: readinessLoading ? 'checking' : readinessError ? 'blocked' : meetingPlanIssue ? 'blocked' : 'ready',
+      detail: readinessLoading
+        ? 'Checking approved class assignment meeting plans…'
+        : readinessError
+          ? readinessError
+          : meetingPlanIssue?.message ?? 'Approved meeting plans are available for frequency, duration, modality, room type, and mandatory occurrences.',
+      link: { to: '/academic/subject-offerings', label: 'Review class assignments' },
     },
   ]
 
@@ -512,13 +543,17 @@ export function IntelligentScheduleWorkspace({
     },
     {
       title: 'Full-time workday policy and exceptions',
-      state: 'blocked',
-      detail: 'Monday–Wednesday is the approved standard working pattern. The term-associated policy and authorized exceptions are not available yet.',
+      state: readinessLoading ? 'checking' : fullTimePolicyIssue ? 'blocked' : 'ready',
+      detail: readinessLoading
+        ? 'Checking the full-time workday policy…'
+        : fullTimePolicyIssue?.message ?? 'The term-scoped full-time workday policy and authorized exceptions are available.',
     },
     {
       title: 'Part-time workload targets',
-      state: 'info',
-      detail: 'Weekly targets use actual teaching hours and remain soft objectives. A target deviation is never a hard scheduling failure. Targets are not available yet.',
+      state: readinessLoading ? 'checking' : partTimeTargetIssue ? 'blocked' : 'info',
+      detail: readinessLoading
+        ? 'Checking part-time workload targets…'
+        : partTimeTargetIssue?.message ?? 'Weekly targets use actual teaching hours and remain soft objectives. A target deviation is never a hard scheduling failure.',
       link: { to: '/faculty', label: 'Review faculty records' },
     },
   ]
@@ -526,34 +561,47 @@ export function IntelligentScheduleWorkspace({
   const facilityChecks: ReadinessCheck[] = [
     {
       title: 'Room configuration and capacity',
-      state: optionsLoading
+      state: optionsLoading || readinessLoading
         ? 'checking'
-        : availableRooms.length === 0
+        : usableRoomsIssue
           ? 'blocked'
-          : 'warning',
-      detail: optionsLoading
-        ? 'Loading room inventory…'
-        : availableRooms.length === 0
-          ? 'No rooms are marked available for this term.'
-          : `${availableRooms.length} available rooms${invalidRooms.length ? ` · ${invalidRooms.length} with invalid capacity or room type` : ''}. Capacity and room type suitability cannot be verified without approved meeting plans.`,
+          : roomConfigurationIssue
+            ? 'warning'
+            : availableRooms.length === 0
+              ? 'blocked'
+              : 'ready',
+      detail: optionsLoading || readinessLoading
+        ? 'Loading room inventory and readiness checks…'
+        : usableRoomsIssue?.message
+          ?? roomConfigurationIssue?.message
+          ?? (availableRooms.length === 0
+            ? 'No rooms are marked available for this term.'
+            : `${availableRooms.length} available rooms${invalidRooms.length ? ` · ${invalidRooms.length} with invalid capacity or room type` : ''}.`),
       link: { to: '/rooms', label: 'Review room inventory' },
     },
     {
       title: 'Explicit combined-class groups',
-      state: 'info',
-      detail: 'Only explicitly configured combined classes are used. No combined-class configuration is available yet.',
+      state: readinessLoading ? 'checking' : combinedClassesIssue ? 'info' : 'ready',
+      detail: combinedClassesIssue?.message ?? 'Explicit combined-class groups are available.',
     },
   ]
 
   const timetableChecks: ReadinessCheck[] = [
     {
       title: 'Published baseline',
-      state: inventoryLoading ? 'checking' : inventoryError || !inventory ? 'blocked' : 'ready',
-      detail: inventoryLoading
-        ? 'Loading the complete schedule inventory…'
+      state: inventoryLoading || readinessLoading
+        ? 'checking'
+        : inventoryError || !inventory
+          ? 'blocked'
+          : publishedBaselineIssue
+            ? 'warning'
+            : 'ready',
+      detail: inventoryLoading || readinessLoading
+        ? 'Loading the complete schedule inventory and baseline checks…'
         : inventoryError
           ? inventoryError
-          : `${publishedSchedules.length} published schedule record${publishedSchedules.length === 1 ? '' : 's'} remain active${publishedSchedules.length ? ' as the comparison baseline' : ''}.`,
+          : publishedBaselineIssue?.message
+            ?? `${publishedSchedules.length} published schedule record${publishedSchedules.length === 1 ? '' : 's'} remain active${publishedSchedules.length ? ' as the comparison baseline' : ''}.`,
     },
     {
       title: 'Existing drafts',
@@ -613,7 +661,11 @@ export function IntelligentScheduleWorkspace({
     {
       id: 'meetings',
       title: 'Meeting requirements',
-      summary: 'Lecture and laboratory meeting plans are not available yet.',
+      summary: readinessLoading
+        ? 'Checking time grid and meeting-plan readiness…'
+        : meetingBlockingCount
+          ? `${meetingBlockingCount} meeting configuration issue${meetingBlockingCount === 1 ? '' : 's'} must be resolved.`
+          : 'Time grid and approved meeting plans are available.',
       checks: meetingChecks,
     },
     {
@@ -658,16 +710,40 @@ export function IntelligentScheduleWorkspace({
         ? 'warning'
         : 'ready'
 
+  const generationAvailable = readiness?.generation_available ?? false
   const generationReason = !term
     ? 'Select an active or planned academic term to continue.'
-    : optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
-      ? 'Waiting for scheduling inputs to finish loading.'
-      : blockingCount
-        ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved before generation.`
-        : !GENERATION_SERVICE_CONNECTED
-          ? 'Generation is not available in this release.'
-          : 'All readiness checks passed.'
-  const generationReady = Boolean(term) && readinessState === 'ready' && GENERATION_SERVICE_CONNECTED
+    : solving
+      ? 'Requesting a complete-semester candidate from the scheduling service…'
+      : optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
+        ? 'Waiting for scheduling inputs to finish loading.'
+        : !readiness
+          ? 'Scheduling readiness is unavailable, so generation cannot start.'
+          : !readiness.integration_ready
+            ? 'The scheduling service is not connected. Configure the scheduler URL and API key before generating.'
+            : !readiness.generation_data_ready
+              ? 'Scheduling inputs are incomplete. Resolve the blocking readiness issues before generating.'
+              : blockingCount
+                ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved before generation.`
+                : 'All readiness checks passed.'
+  const generationReady = Boolean(term) && !solving && !blockingCount && generationAvailable
+
+  const handleGenerate = useCallback(async () => {
+    if (!termId || !generationReady) return
+
+    setSolving(true)
+    setSolveError(null)
+
+    try {
+      const result = await solveScheduling({ academic_term_id: termId })
+      setCandidate(result)
+      setStage('review')
+    } catch (failure) {
+      setSolveError(getApiErrorMessage(failure, 'Unable to generate a scheduling candidate.'))
+    } finally {
+      setSolving(false)
+    }
+  }, [generationReady, termId])
 
   async function handleCheckAssignments() {
     try {
@@ -684,10 +760,14 @@ export function IntelligentScheduleWorkspace({
     ))
   }
 
+  const configurationReady = Boolean(
+    readiness?.capabilities.time_grid && readiness.capabilities.meeting_plans,
+  )
   const stageStatus: Record<WorkspaceStage, string> = {
     overview: stateLabel(readinessState),
-    generation: blockingCount ? `${blockingCount} blocking` : 'Configured',
-    review: 'No candidate',
+    configuration: configurationReady ? 'Approved' : 'Needs setup',
+    generation: solving ? 'Running' : blockingCount ? `${blockingCount} blocking` : 'Configured',
+    review: candidate ? candidate.solver_status : 'No candidate',
     approval: 'No candidate',
   }
 
@@ -714,12 +794,26 @@ export function IntelligentScheduleWorkspace({
           hasConfiguredOfferings={configuredOfferings.length > 0}
           canGenerate={generationReady}
           generationReason={generationReason}
+          onGenerate={() => void handleGenerate()}
+          isGenerating={solving}
+          solveError={solveError}
           onCheckAssignments={() => void handleCheckAssignments()}
           onRefreshInventory={() => {
             setInventoryVersion((value) => value + 1)
             setReadinessVersion((value) => value + 1)
           }}
           inventoryLoading={inventoryLoading}
+        />
+      ) : null}
+
+      {stage === 'configuration' ? (
+        <SchedulingConfigurationStage
+          key={termId ?? 'no-term'}
+          termId={termId}
+          onConfigurationChanged={() => {
+            setReadinessVersion((value) => value + 1)
+            setInventoryVersion((value) => value + 1)
+          }}
         />
       ) : null}
 
@@ -741,11 +835,18 @@ export function IntelligentScheduleWorkspace({
           onKeepRoomChange={setKeepRoom}
           canGenerate={generationReady}
           generationReason={generationReason}
+          onGenerate={() => void handleGenerate()}
+          isGenerating={solving}
+          solveError={solveError}
         />
       ) : null}
 
       {stage === 'review' ? (
-        <ReviewStage publishedCount={publishedSchedules.length} onGoToGeneration={() => setStage('generation')} />
+        <ReviewStage
+          candidate={candidate}
+          publishedCount={publishedSchedules.length}
+          onGoToGeneration={() => setStage('generation')}
+        />
       ) : null}
 
       {stage === 'approval' ? (
@@ -771,6 +872,7 @@ function WorkspaceSteps({
 }) {
   const steps: Array<{ id: WorkspaceStage; label: string; locked?: boolean }> = [
     { id: 'overview', label: 'Overview' },
+    { id: 'configuration', label: 'Configuration' },
     { id: 'generation', label: 'Generation' },
     { id: 'review', label: 'Timetable review', locked: true },
     { id: 'approval', label: 'Approval', locked: true },
@@ -837,6 +939,9 @@ function OverviewStage({
   hasConfiguredOfferings,
   canGenerate,
   generationReason,
+  onGenerate,
+  isGenerating,
+  solveError,
   onCheckAssignments,
   onRefreshInventory,
   inventoryLoading,
@@ -858,6 +963,9 @@ function OverviewStage({
   hasConfiguredOfferings: boolean
   canGenerate: boolean
   generationReason: string
+  onGenerate: () => void
+  isGenerating: boolean
+  solveError: string | null
   onCheckAssignments: () => void
   onRefreshInventory: () => void
   inventoryLoading: boolean
@@ -978,17 +1086,22 @@ function OverviewStage({
               type="button"
               className="w-full"
               disabled={!canGenerate}
+              isLoading={isGenerating}
+              onClick={onGenerate}
               leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
             >
               Generate complete-semester timetable
             </Button>
             <p className="text-[11px] leading-4 text-ink-muted">{generationReason}</p>
+            {solveError ? (
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {solveError}
+              </p>
+            ) : null}
             <div className="rounded-lg border border-line bg-surface-soft p-3 text-xs leading-5 text-ink-muted">
               The current published timetable remains active. Professor assignments are never changed by the AI.
             </div>
-            <p className="text-[11px] leading-4 text-ink-muted">
-              Generation is not available in this release, so the action stays disabled even when inputs are complete.
-            </p>
           </CardBody>
         </Card>
       </div>
@@ -1100,6 +1213,9 @@ function GenerationStage({
   onKeepRoomChange,
   canGenerate,
   generationReason,
+  onGenerate,
+  isGenerating,
+  solveError,
 }: {
   term: AcademicTerm | undefined
   inventoryLoading: boolean
@@ -1117,6 +1233,9 @@ function GenerationStage({
   onKeepRoomChange: (value: boolean) => void
   canGenerate: boolean
   generationReason: string
+  onGenerate: () => void
+  isGenerating: boolean
+  solveError: string | null
 }) {
   const baselineValue = inventoryLoading
     ? 'Loading published records…'
@@ -1159,21 +1278,21 @@ function GenerationStage({
           <CardHeader className="py-4">
             <h2 className="text-sm font-semibold text-ink">Optimization preferences</h2>
             <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-              Prefer the previous timetable&apos;s day, time, and room when a valid alternative is available.
+              These preferences are not supported by the current scheduling contract.
             </p>
           </CardHeader>
           <CardBody className="space-y-3">
-            <PreferenceCheckbox checked={keepDay} onChange={onKeepDayChange}>
+            <PreferenceCheckbox checked={keepDay} onChange={onKeepDayChange} disabled>
               Prefer previous meeting day
             </PreferenceCheckbox>
-            <PreferenceCheckbox checked={keepStartTime} onChange={onKeepStartTimeChange}>
+            <PreferenceCheckbox checked={keepStartTime} onChange={onKeepStartTimeChange} disabled>
               Prefer previous start time
             </PreferenceCheckbox>
-            <PreferenceCheckbox checked={keepRoom} onChange={onKeepRoomChange}>
+            <PreferenceCheckbox checked={keepRoom} onChange={onKeepRoomChange} disabled>
               Prefer previous room
             </PreferenceCheckbox>
             <p className="border-t border-line pt-3 text-[11px] leading-4 text-ink-muted">
-              These are soft preferences, not guarantees. Hard constraints and fixed professor assignments always take priority, and previous placements can still change.
+              These preferences are shown as unavailable and are not sent to the scheduling service. Hard constraints and fixed professor assignments always take priority.
             </p>
           </CardBody>
         </Card>
@@ -1183,17 +1302,17 @@ function GenerationStage({
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600 [&::-webkit-details-marker]:hidden">
               <div>
                 <h2 className="text-sm font-semibold text-ink">Advanced settings</h2>
-                <p className="mt-0.5 text-xs text-ink-muted">Operating hours, time grid, and solver options.</p>
+                <p className="mt-0.5 text-xs text-ink-muted">Configuration values are managed in the Configuration stage.</p>
               </div>
               <span className="flex items-center gap-2">
-                <Badge tone="neutral">Not available</Badge>
+                <Badge tone="neutral">Managed elsewhere</Badge>
                 <ChevronDown className="size-4 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
               </span>
             </summary>
             <div className="space-y-3 border-t border-line p-5">
-              <UnavailableSetting label="Operating days and hours" detail="Institution-configured and term-associated values are not available yet." />
-              <UnavailableSetting label="Time grid and valid start boundaries" detail="Time-grid configuration is not available yet." />
-              <UnavailableSetting label="Solver time limit and runtime settings" detail="Runtime settings are not available yet." />
+              <UnavailableSetting label="Operating days and hours" detail="Stored in the approved term-scoped time grid and used automatically when a request is built." />
+              <UnavailableSetting label="Time grid and valid start boundaries" detail="Stored as fixed slots in the approved time grid; not edited in this stage." />
+              <UnavailableSetting label="Solver time limit and runtime settings" detail="Configured on the backend and supplied through the frozen contract." />
             </div>
           </details>
         </Card>
@@ -1257,18 +1376,26 @@ function GenerationStage({
             <p className="mt-0.5 text-xs text-ink-muted">Complete-semester run</p>
           </CardHeader>
           <CardBody className="space-y-3">
-            <Badge tone={canGenerate ? 'success' : 'warning'}>{canGenerate ? 'Ready to run' : 'Unavailable'}</Badge>
+            <Badge tone={canGenerate ? 'success' : 'warning'}>{isGenerating ? 'Running' : canGenerate ? 'Ready to run' : 'Unavailable'}</Badge>
             <p className="text-xs leading-5 text-ink-muted">{generationReason}</p>
             <Button
               type="button"
               className="w-full"
               disabled={!canGenerate}
+              isLoading={isGenerating}
+              onClick={onGenerate}
               leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
             >
               Generate complete-semester timetable
             </Button>
+            {solveError ? (
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {solveError}
+              </p>
+            ) : null}
             <p className="text-[11px] leading-4 text-ink-muted">
-              Execution progress and solver status appear here only while a run is active. Generation is not available in this release.
+              The candidate is returned for review only. Nothing is saved or published automatically.
             </p>
           </CardBody>
         </Card>
@@ -1304,17 +1431,20 @@ function UnavailableSetting({ label, detail }: { label: string; detail: string }
 function PreferenceCheckbox({
   checked,
   onChange,
+  disabled = false,
   children,
 }: {
   checked: boolean
   onChange: (value: boolean) => void
+  disabled?: boolean
   children: string
 }) {
   return (
-    <label className="flex items-start gap-2 text-xs text-ink">
+    <label className={cn('flex items-start gap-2 text-xs text-ink', disabled && 'opacity-60')}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         className="mt-0.5 accent-maroon-700"
       />
@@ -1324,31 +1454,90 @@ function PreferenceCheckbox({
 }
 
 function ReviewStage({
+  candidate,
   publishedCount,
   onGoToGeneration,
 }: {
+  candidate: SchedulingSolveResult | null
   publishedCount: number
   onGoToGeneration: () => void
 }) {
+  if (!candidate) {
+    return (
+      <Card>
+        <EmptyState
+          icon={CalendarDays}
+          title="No generated timetable to review"
+          description="A generated candidate will appear here as a filterable weekly timetable. The current published timetable remains active while no candidate exists."
+          action={(
+            <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+              Go to generation setup
+            </Button>
+          )}
+        />
+        <div className="border-t border-line px-6 py-4">
+          <p className="text-xs leading-5 text-ink-muted">
+            The review stage will include the master timetable, unscheduled-meeting diagnostics, professor workload, room utilization, and a published-baseline comparison.
+            {publishedCount ? ` ${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} are currently active.` : ''}
+          </p>
+        </div>
+      </Card>
+    )
+  }
+
+  const summary = candidate.validation_summary
+  const tone: BadgeTone = summary.complete_candidate && summary.independent_validation_status === 'passed' ? 'success' : 'warning'
+
   return (
-    <Card>
-      <EmptyState
-        icon={CalendarDays}
-        title="No generated timetable to review"
-        description="A generated candidate will appear here as a filterable weekly timetable. The current published timetable remains active while no candidate exists."
-        action={(
-          <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
-            Go to generation setup
-          </Button>
-        )}
-      />
-      <div className="border-t border-line px-6 py-4">
-        <p className="text-xs leading-5 text-ink-muted">
-          The review stage will include the master timetable, unscheduled-meeting diagnostics, professor workload, room utilization, and a published-baseline comparison.
-          {publishedCount ? ` ${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} are currently active.` : ''}
-        </p>
+    <div className="space-y-5">
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2 py-4">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Generated candidate</h2>
+            <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+              Returned for review only. Nothing is saved or published automatically.
+            </p>
+          </div>
+          <Badge tone={tone}>{candidate.solver_status}</Badge>
+        </CardHeader>
+        <CardBody>
+          <dl>
+            <DefinitionRow
+              label="Scheduled meetings"
+              value={`${summary.scheduled_meeting_count} of ${summary.required_mandatory_meeting_count} required`}
+              detail={`${summary.desired_meeting_count} meetings requested in total.`}
+            />
+            <DefinitionRow
+              label="Offerings represented"
+              value={`${summary.represented_offering_count} of ${summary.required_offering_count}`}
+            />
+            <DefinitionRow label="Independent validation" value={summary.independent_validation_status} />
+            <DefinitionRow
+              label="Objective value"
+              value={candidate.objective_value === null || candidate.objective_value === undefined ? 'Not reported' : candidate.objective_value.toFixed(2)}
+            />
+            <DefinitionRow label="Solver time" value={`${candidate.solver_execution_ms} ms`} />
+            <DefinitionRow
+              label="Diagnostics"
+              value={`${candidate.diagnostics.length} diagnostic${candidate.diagnostics.length === 1 ? '' : 's'}, ${candidate.warnings.length} warning${candidate.warnings.length === 1 ? '' : 's'}`}
+            />
+            <DefinitionRow label="Generation ID" value={candidate.generation_id} />
+          </dl>
+          {summary.validation_errors.length ? (
+            <ul className="mt-4 space-y-1 text-xs leading-5 text-red-800">
+              {summary.validation_errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          ) : null}
+        </CardBody>
+      </Card>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+          Back to generation setup
+        </Button>
       </div>
-    </Card>
+    </div>
   )
 }
 
