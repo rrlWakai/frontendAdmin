@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ChevronLeft, ChevronRight, Layers3, Pencil, Plus, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Layers3, Pencil, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -16,6 +16,7 @@ import {
   fetchAcademicOptions,
   updateAcademicRecord,
 } from '@/services/api/academic'
+import type { AcademicFilters } from '@/services/api/academic'
 import type {
   AcademicMajor,
   AcademicOptions,
@@ -85,6 +86,20 @@ const referenceLabels: Record<ReferenceKind, { title: string; singular: string }
   'year-levels': { title: 'Year levels', singular: 'year level' },
 }
 
+const OFFICIAL_MAJOR_CODES: Record<string, readonly string[]> = {
+  BSIT: ['WMAD', 'SMP', 'NA'],
+  BSCS: ['AMG', 'IS'],
+}
+
+const UPPER_DIVISION_CODE_PATTERN = /^([34])([A-Z]+)([1-9]\d*)$/
+
+type SectionDialogMode = 'create' | 'edit' | 'duplicate'
+
+interface SectionDialogState {
+  mode: SectionDialogMode
+  section: AcademicSection | null
+}
+
 function asText(value: unknown): string {
   return value === null || value === undefined ? '' : String(value)
 }
@@ -101,16 +116,8 @@ function normalizeToken(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '')
 }
 
-function tokenFromCode(code: string, majorCode?: string): string {
-  let value = code.trim().toUpperCase()
-
-  if (majorCode && value.endsWith(`-${majorCode}`)) {
-    value = value.slice(0, -(majorCode.length + 1))
-  }
-
-  const last = value.split('-').pop() ?? value
-
-  return last.replace(/^\d+/, '') || value
+function normalizeOfficialCode(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s-]/g, '')
 }
 
 function buildSectionCode(
@@ -119,16 +126,120 @@ function buildSectionCode(
   major: { code: string } | null,
   token: string,
 ): string {
+  if (!program || !yearLevel) return ''
+
+  if (yearLevel.level >= 3) {
+    if (!major) return ''
+    return normalizeOfficialCode(token)
+  }
+
   const normalized = normalizeToken(token)
 
-  if (!normalized || !program || !yearLevel) return ''
+  if (!normalized) return ''
   if (normalized.includes('-')) return normalized
 
   const programCode = normalizeToken(program.code)
-  const majorCode = major ? normalizeToken(major.code) : ''
-  const suffix = majorCode ? `${yearLevel.level}${normalized}-${majorCode}` : `${yearLevel.level}${normalized}`
 
-  return `${programCode}-${suffix}`
+  return `${programCode}-${yearLevel.level}${normalized}`
+}
+
+function suggestedSectionToken(
+  program: { code: string } | undefined,
+  yearLevel: { level: number } | undefined,
+  major: { code: string } | null,
+  sections: AcademicSection[],
+): string {
+  if (!program || !yearLevel) return ''
+
+  if (yearLevel.level >= 3) {
+    if (!major) return ''
+
+    const majorCode = normalizeOfficialCode(major.code)
+    if (!majorCode) return ''
+
+    const prefix = `${yearLevel.level}${majorCode}`
+    const usedSequences = new Set<number>()
+
+    for (const section of sections) {
+      const code = normalizeOfficialCode(section.code)
+      if (!code.startsWith(prefix)) continue
+
+      const sequence = code.slice(prefix.length)
+      if (/^[1-9]\d*$/.test(sequence)) usedSequences.add(Number(sequence))
+    }
+
+    let next = 1
+    while (usedSequences.has(next)) next += 1
+
+    return `${prefix}${next}`
+  }
+
+  const prefix = `${normalizeToken(program.code)}-${yearLevel.level}`
+  const usedLetters = new Set<string>()
+
+  for (const section of sections) {
+    const code = normalizeToken(section.code)
+    if (!code.startsWith(prefix)) continue
+
+    const letter = code.slice(prefix.length).replace(/[^A-Z]/g, '')
+    if (letter) usedLetters.add(letter)
+  }
+
+  for (let index = 0; index < 26; index += 1) {
+    const letter = String.fromCharCode(65 + index)
+    if (!usedLetters.has(letter)) return letter
+  }
+
+  let suffix = 1
+  while (usedLetters.has(`A${suffix}`)) suffix += 1
+
+  return `A${suffix}`
+}
+
+function validateSectionCodeValue(
+  code: string,
+  program: { code: string } | undefined,
+  yearLevel: { level: number } | undefined,
+  major: { code: string } | null,
+): string | null {
+  if (!program || !yearLevel) return null
+
+  if (yearLevel.level < 3) {
+    return major ? 'First- and second-year sections use the common program curriculum.' : null
+  }
+
+  if (!major) return 'Third- and fourth-year sections require a specialization.'
+
+  const programCode = normalizeOfficialCode(program.code)
+  const majorCode = normalizeOfficialCode(major.code)
+  const allowedMajorCodes = OFFICIAL_MAJOR_CODES[programCode]
+
+  if (allowedMajorCodes && !allowedMajorCodes.includes(majorCode)) {
+    return `${programCode} does not offer the ${majorCode} specialization.`
+  }
+
+  const match = code.match(UPPER_DIVISION_CODE_PATTERN)
+
+  if (!match) return 'Use the official format, such as 3WMAD1, with no spaces or hyphens.'
+  if (match[1] !== String(yearLevel.level)) return `The section code must begin with ${yearLevel.level}.`
+  if (match[2] !== majorCode) return `The section code must include ${majorCode}.`
+
+  return null
+}
+
+function isCodeUsedInTerm(
+  sections: AcademicSection[],
+  code: string,
+  termId: number,
+  excludeId?: number,
+): boolean {
+  const normalized = normalizeToken(code)
+
+  return sections.some((section) => (
+    section.id !== excludeId
+    && section.academic_term_id === termId
+    && normalizeToken(section.code) === normalized
+  ))
 }
 
 function termLabel(term: AcademicOptions['terms'][number]): string {
@@ -194,6 +305,7 @@ function toMajorOption(major: AcademicOptions['majors'][number]): AcademicMajor 
 }
 
 interface SectionDialogProps {
+  mode: SectionDialogMode
   section: AcademicSection | null
   options: AcademicOptions
   defaultTermId: number
@@ -201,19 +313,23 @@ interface SectionDialogProps {
   onSaved: (message: string) => void
 }
 
-function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: SectionDialogProps) {
+function SectionDialog({ mode, section, options, defaultTermId, onCancel, onSaved }: SectionDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const initialMajor = section ? toMajor(section.major, section.program_id) : null
+  const isEdit = mode === 'edit'
+  const isDuplicate = mode === 'duplicate'
   const [values, setValues] = useState<SectionFormState>(() => ({
     program_id: asText(section?.program_id),
     year_level_id: asText(section?.year_level_id),
     major_id: asText(section?.major_id),
     academic_term_id: asText(section?.academic_term_id ?? (defaultTermId || '')),
-    section_token: section ? tokenFromCode(section.code, initialMajor?.code) : '',
+    section_token: section && !isDuplicate ? section.code : '',
     name: section?.name ?? '',
     capacity: asText(section?.capacity),
     status: section?.status ?? 'active',
   }))
+  const [catalogSections, setCatalogSections] = useState<AcademicSection[]>([])
+  const [codeManuallyEdited, setCodeManuallyEdited] = useState(false)
+  const [relationshipsChanged, setRelationshipsChanged] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [isSaving, setIsSaving] = useState(false)
@@ -227,23 +343,82 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
   const selectedProgram = options.programs.find((program) => program.id === Number(values.program_id))
   const selectedYearLevel = options.year_levels.find((level) => level.id === Number(values.year_level_id))
   const requiresSpecialization = (selectedYearLevel?.level ?? 0) >= 3
+  const programCode = selectedProgram ? normalizeOfficialCode(selectedProgram.code) : ''
+  const allowedMajorCodes = OFFICIAL_MAJOR_CODES[programCode]
   const majorOptions = options.majors.filter((major) => (
-    major.program_id === Number(values.program_id) && major.status !== 'inactive'
+    major.program_id === Number(values.program_id)
+    && major.status !== 'inactive'
+    && (!allowedMajorCodes || allowedMajorCodes.includes(normalizeOfficialCode(major.code)))
   ))
   const selectedMajor = majorOptions.find((major) => major.id === Number(values.major_id)) ?? null
+  const effectiveMajor = requiresSpecialization ? selectedMajor : null
   const termOptions = [...options.terms].sort((a, b) => (
     b.academic_year.localeCompare(a.academic_year) || a.term.localeCompare(b.term)
   ))
-  const previewCode = buildSectionCode(
-    selectedProgram,
-    selectedYearLevel,
-    requiresSpecialization ? selectedMajor : null,
-    values.section_token,
+  const preserveOriginalCode = isEdit && section !== null && !codeManuallyEdited && !relationshipsChanged
+  const previewCode = preserveOriginalCode
+    ? section?.code ?? ''
+    : buildSectionCode(selectedProgram, selectedYearLevel, effectiveMajor, values.section_token)
+  const codeValidationError = preserveOriginalCode
+    ? null
+    : validateSectionCodeValue(previewCode, selectedProgram, selectedYearLevel, effectiveMajor)
+
+  useEffect(() => {
+    let active = true
+
+    if (!values.program_id || !values.year_level_id) {
+      setCatalogSections([])
+      return () => { active = false }
+    }
+
+    const filters: AcademicFilters = {
+      program_id: Number(values.program_id),
+      year_level_id: Number(values.year_level_id),
+      per_page: 100,
+    }
+
+    void (async () => {
+      const collected: AcademicSection[] = []
+      let currentPage = 1
+      let lastPage = 1
+
+      do {
+        const result = await fetchAcademicDirectory<AcademicSection>('sections', {
+          ...filters,
+          page: currentPage,
+        })
+        collected.push(...result.records)
+        lastPage = result.pagination.last_page
+        currentPage += 1
+      } while (active && currentPage <= lastPage)
+
+      if (active) setCatalogSections(collected)
+    })().catch(() => {
+      if (active) setCatalogSections([])
+    })
+
+    return () => { active = false }
+  }, [values.program_id, values.year_level_id, values.major_id, requiresSpecialization])
+
+  const suggestedToken = useMemo(
+    () => suggestedSectionToken(selectedProgram, selectedYearLevel, effectiveMajor, catalogSections),
+    [selectedProgram, selectedYearLevel, effectiveMajor, catalogSections],
   )
+
+  useEffect(() => {
+    if (!suggestedToken || codeManuallyEdited || (isEdit && !relationshipsChanged)) return
+
+    setValues((current) => (
+      current.section_token === suggestedToken
+        ? current
+        : { ...current, section_token: suggestedToken }
+    ))
+  }, [suggestedToken, codeManuallyEdited, isEdit, relationshipsChanged])
 
   function update<K extends keyof SectionFormState>(key: K, value: SectionFormState[K]) {
     setValues((current) => ({ ...current, [key]: value }))
     setFieldErrors((current) => ({ ...current, [key]: [] }))
+    if (key === 'section_token') setCodeManuallyEdited(true)
     setError(null)
   }
 
@@ -253,6 +428,7 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
       program_id: value,
       major_id: '',
     }))
+    setRelationshipsChanged(true)
     setFieldErrors({})
     setError(null)
   }
@@ -264,7 +440,15 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
       year_level_id: value,
       major_id: (level?.level ?? 0) < 3 ? '' : current.major_id,
     }))
+    setRelationshipsChanged(true)
     setFieldErrors({})
+    setError(null)
+  }
+
+  function updateMajor(value: string) {
+    setValues((current) => ({ ...current, major_id: value }))
+    setRelationshipsChanged(true)
+    setFieldErrors((current) => ({ ...current, major_id: [] }))
     setError(null)
   }
 
@@ -281,7 +465,21 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
     if (requiresSpecialization && !values.major_id) {
       nextErrors.major_id = ['Choose the specialization for this section.']
     }
+    if (requiresSpecialization && values.major_id && !selectedMajor) {
+      nextErrors.major_id = ['Choose a specialization valid for this program.']
+    }
     if (!previewCode) nextErrors.section_token = ['Enter a valid section letter or code.']
+    if (codeValidationError) nextErrors.section_token = [codeValidationError]
+    if (!nextErrors.section_token && previewCode.length > 32) {
+      nextErrors.section_token = ['Section code must be 32 characters or fewer.']
+    }
+    if (
+      values.academic_term_id
+      && !nextErrors.section_token
+      && isCodeUsedInTerm(catalogSections, previewCode, Number(values.academic_term_id), isEdit ? section?.id : undefined)
+    ) {
+      nextErrors.section_token = ['This section code is already used in the selected academic term.']
+    }
 
     const capacity = values.capacity.trim() === '' ? null : Number(values.capacity)
     if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 65535)) {
@@ -308,17 +506,21 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
     setIsSaving(true)
 
     try {
-      if (section) {
+      if (isEdit && section) {
         await updateAcademicRecord('sections', section.id, payload)
         onSaved('Section updated.')
       } else {
         await createAcademicRecord('sections', payload)
-        onSaved('Section created.')
+        onSaved(isDuplicate ? 'Section duplicated.' : 'Section created.')
       }
     } catch (failure) {
-      const errors = getApiFieldErrors(failure)
-      setFieldErrors(errors)
-      setError(Object.values(errors).flat()[0] ?? getApiErrorMessage(failure, 'Unable to save the section.'))
+      const apiErrors = getApiFieldErrors(failure)
+      const mappedErrors: Record<string, string[]> = {
+        ...apiErrors,
+        ...(apiErrors.code ? { section_token: apiErrors.section_token ?? apiErrors.code } : {}),
+      }
+      setFieldErrors(mappedErrors)
+      setError(Object.values(mappedErrors).flat()[0] ?? getApiErrorMessage(failure, 'Unable to save the section.'))
     } finally {
       setIsSaving(false)
     }
@@ -341,10 +543,14 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
               Academic structure
             </p>
             <h2 id="section-dialog-title" className="mt-1 text-xl font-semibold">
-              {section ? 'Edit section' : 'Create section'}
+              {isDuplicate ? 'Duplicate section' : isEdit ? 'Edit section' : 'Create section'}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
-              Select existing academic records; section creation never duplicates programs, specializations, or year levels.
+              {isDuplicate
+                ? 'Copies only section-level configuration. Students, placements, offerings, assignments, and history are never copied.'
+                : isEdit
+                  ? 'Edit this section configuration. Its existing code is preserved unless the program, year level, specialization, or code changes.'
+                  : 'Select existing academic records; section creation never duplicates programs, specializations, or year levels.'}
             </p>
           </div>
           <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
@@ -391,7 +597,7 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
             <SelectField
               label="Specialization"
               value={values.major_id}
-              onChange={(value) => update('major_id', value)}
+              onChange={updateMajor}
               options={majorOptions.map((major) => ({
                 value: String(major.id),
                 label: `${major.code} — ${major.name}`,
@@ -426,12 +632,14 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
           />
 
           <TextField
-            label="Section"
+            label={requiresSpecialization ? 'Section code' : 'Section'}
             value={values.section_token}
             onChange={(event) => update('section_token', event.target.value)}
-            placeholder="A"
+            placeholder={requiresSpecialization ? suggestedToken || '3WMAD1' : 'A'}
             error={fieldErrors.section_token?.[0]}
-            hint="Enter a section letter, such as A. A full section code is also accepted."
+            hint={requiresSpecialization
+              ? `Official format: year digit + specialization + sequence. Suggested: ${suggestedToken || '—'}.`
+              : 'Enter a section letter, such as A. A full section code is also accepted.'}
             maxLength={32}
             required
           />
@@ -479,7 +687,11 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
               {previewCode || 'Complete the program, year level, and section fields to build the code.'}
             </p>
             <p className="text-xs text-ink-muted">
-              Codes follow the existing convention: program · year level · letter · specialization code when applicable.
+              {preserveOriginalCode
+                ? 'The existing code is preserved for this edit. Changing its identity fields will require the official convention.'
+                : requiresSpecialization
+                  ? 'Third- and fourth-year codes use [year][specialization][number] with no spaces or hyphens.'
+                  : 'First- and second-year codes keep the existing program · year level · letter convention.'}
             </p>
           </div>
         </div>
@@ -489,7 +701,7 @@ function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: S
             Cancel
           </Button>
           <Button type="submit" isLoading={isSaving}>
-            {section ? 'Save changes' : 'Create section'}
+            {isDuplicate ? 'Duplicate section' : isEdit ? 'Save changes' : 'Create section'}
           </Button>
         </div>
       </form>
@@ -743,7 +955,7 @@ export function SectionsPage() {
   const [settledKey, setSettledKey] = useState<string | null>(null)
   const [refreshVersion, setRefreshVersion] = useState(0)
   const [optionsVersion, setOptionsVersion] = useState(0)
-  const [sectionDialog, setSectionDialog] = useState<AcademicSection | null | undefined>()
+  const [sectionDialog, setSectionDialog] = useState<SectionDialogState | undefined>()
   const [referenceDialog, setReferenceDialog] = useState<{
     kind: ReferenceKind
     record: ReferenceRecord | null
@@ -876,7 +1088,7 @@ export function SectionsPage() {
           <Button
             onClick={() => {
               setSuccess(null)
-              setSectionDialog(null)
+              setSectionDialog({ mode: 'create', section: null })
             }}
             disabled={!options}
             leftIcon={<Plus className="size-4" aria-hidden="true" />}
@@ -1034,7 +1246,7 @@ export function SectionsPage() {
               title="No sections found"
               description={search || termFilter ? 'Try adjusting the search or academic term.' : 'Create a section to start building the academic structure.'}
               action={canManage ? (
-                <Button onClick={() => setSectionDialog(null)} leftIcon={<Plus className="size-4" aria-hidden="true" />}>
+                <Button onClick={() => setSectionDialog({ mode: 'create', section: null })} leftIcon={<Plus className="size-4" aria-hidden="true" />}>
                   Create section
                 </Button>
               ) : undefined}
@@ -1074,18 +1286,32 @@ export function SectionsPage() {
                                     <p className="text-ink-muted">Capacity {section.capacity ?? '—'}</p>
                                     <AcademicStatusBadge status={section.status} />
                                     {canManage ? (
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setSuccess(null)
-                                          setSectionDialog(section)
-                                        }}
-                                        leftIcon={<Pencil className="size-3.5" aria-hidden="true" />}
-                                      >
-                                        Edit
-                                      </Button>
+                                      <div className="flex justify-end gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setSuccess(null)
+                                            setSectionDialog({ mode: 'duplicate', section })
+                                          }}
+                                          leftIcon={<Copy className="size-3.5" aria-hidden="true" />}
+                                        >
+                                          Duplicate
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setSuccess(null)
+                                            setSectionDialog({ mode: 'edit', section })
+                                          }}
+                                          leftIcon={<Pencil className="size-3.5" aria-hidden="true" />}
+                                        >
+                                          Edit
+                                        </Button>
+                                      </div>
                                     ) : <span />}
                                   </div>
                                 ))}
@@ -1140,10 +1366,11 @@ export function SectionsPage() {
         <ProgressionOversight />
       </details>
 
-      {sectionDialog !== undefined && options ? (
+      {sectionDialog && options ? (
         <SectionDialog
-          key={sectionDialog?.id ?? 'new'}
-          section={sectionDialog}
+          key={`${sectionDialog.mode}-${sectionDialog.section?.id ?? 'new'}`}
+          mode={sectionDialog.mode}
+          section={sectionDialog.section}
           options={options}
           defaultTermId={termFilter ? Number(termFilter) : currentTermId}
           onCancel={() => setSectionDialog(undefined)}
