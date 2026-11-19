@@ -322,6 +322,8 @@ export interface SchedulingGenerationRecord {
   status: string
   solver_status: string | null
   result_status: string | null
+  failure_code?: string | null
+  failure_message?: string | null
   completed_at: string | null
 }
 
@@ -355,13 +357,106 @@ export interface SchedulingSolveResult {
   diagnostics: SchedulerDiagnostic[]
   workload_metrics: SchedulerWorkloadMetric[]
   warnings: SchedulerWarning[]
-  generation?: SchedulingGenerationRecord
-  candidate?: SchedulingCandidateRecord | null
+}
+
+export interface SchedulingSolveResponse {
+  result: SchedulingSolveResult
+  generation: SchedulingGenerationRecord
+  candidate: SchedulingCandidateRecord | null
 }
 
 export interface SchedulingSolveInput {
   academic_term_id: number
   correlation_id?: string
+}
+
+export type CandidateRevisionStatus =
+  | 'draft'
+  | 'under_review'
+  | 'validated'
+  | 'needs_revision'
+  | 'superseded'
+  | 'discarded'
+
+export type CandidateRevisionValidationStatus = 'valid' | 'invalid' | 'not_validated'
+
+export interface SchedulingCandidateRevisionSummary {
+  uuid: string
+  revision_number: number
+  parent_revision_id: number | null
+  status: CandidateRevisionStatus
+  validation_status: CandidateRevisionValidationStatus
+  version: number
+  content_sha256: string
+  base_snapshot_sha256: string
+  base_revision_sha256: string | null
+  change_summary: string
+  created_by_user_id: number | null
+  updated_by_user_id: number | null
+  validated_by_user_id: number | null
+  submitted_at: string | null
+  validated_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type CandidateRevisionEventType = 'status_transition' | 'content_update' | 'validation'
+
+export interface CandidateRevisionStatusEvent {
+  id: number
+  event_type: CandidateRevisionEventType
+  is_status_transition: boolean
+  from_status: CandidateRevisionStatus | null
+  to_status: CandidateRevisionStatus
+  actor_user_id: number | null
+  reason: string | null
+  expected_version: number | null
+  observed_version: number
+  metadata: Record<string, unknown>
+  created_at: string | null
+}
+
+export interface SchedulingCandidateContent {
+  snapshot_sha256: string
+  validation_summary: SchedulerValidationSummary
+  assignments: SchedulerAssignment[]
+}
+
+export interface SchedulingCandidateDetail {
+  candidate: SchedulingCandidateRecord
+  revisions: SchedulingCandidateRevisionSummary[]
+}
+
+export interface SchedulingCandidateRevisionDetail {
+  revision: SchedulingCandidateRevisionSummary
+  candidate: SchedulingCandidateRecord
+  content: SchedulingCandidateContent
+  status_events: CandidateRevisionStatusEvent[]
+}
+
+export interface CreateCandidateRevisionInput {
+  change_summary: string
+  parent_revision_uuid?: string | null
+  expected_version?: number
+}
+
+export interface UpdateCandidateRevisionInput {
+  expected_version: number
+  change_summary: string
+  changes: {
+    assignments: SchedulerAssignment[]
+  }
+}
+
+export interface ValidateCandidateRevisionInput {
+  expected_version: number
+  reason: string
+}
+
+export interface TransitionCandidateRevisionInput {
+  expected_version: number
+  to_status: CandidateRevisionStatus
+  reason: string
 }
 
 export type SchedulingConfigurationStatus = 'draft' | 'approved' | 'superseded'

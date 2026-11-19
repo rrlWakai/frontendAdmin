@@ -147,6 +147,7 @@ export function SchedulingPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [workspaceDirty, setWorkspaceDirty] = useState(false)
   const [editSchedule, setEditSchedule] = useState<Partial<Omit<ScheduleInput, 'subject_offering_id'>>>({})
   const [facultyId, setFacultyId] = useState('')
   const [professorId, setProfessorId] = useState('')
@@ -163,6 +164,8 @@ export function SchedulingPage() {
     inputPlaceholder?: string
     onConfirm: (value: string) => void | Promise<void>
   } | null>(null)
+
+  const handleWorkspaceDirtyChange = useCallback((dirty: boolean) => setWorkspaceDirty(dirty), [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250)
@@ -416,7 +419,7 @@ export function SchedulingPage() {
       <PageHeader
         eyebrow="Schedule"
         title="Intelligent Scheduling"
-        description="Generate, review, edit, and publish class schedules for the selected academic term."
+        description="Generate, review, and revise candidate timetables for the selected academic term."
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
             <label className="block w-full text-xs font-semibold text-ink-muted sm:w-72">
@@ -424,7 +427,10 @@ export function SchedulingPage() {
               <select
                 value={termId ?? ''}
                 onChange={(event) => {
-                  setTermId(Number(event.target.value) || null)
+                  const nextTermId = Number(event.target.value) || null
+                  if (workspaceDirty && nextTermId !== termId && !window.confirm('Change academic term? Unsaved candidate revision edits will be discarded.')) return
+                  setTermId(nextTermId)
+                  setWorkspaceDirty(false)
                   setPage(1)
                   setSelected(null)
                   setConflictPreview([])
@@ -480,14 +486,15 @@ export function SchedulingPage() {
           optionsLoading={loading}
           loadError={loadError}
           conflicts={conflicts}
+          onDirtyChange={handleWorkspaceDirtyChange}
         />
       </Suspense>
 
       <section className="mb-4 mt-8" aria-labelledby="timetable-review-heading">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-600">Review and publish</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-600">Published records</p>
         <h2 id="timetable-review-heading" className="mt-1 text-lg font-semibold text-ink">Timetable records</h2>
         <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-muted">
-          Review generated draft candidates, adjust class days, times, rooms, and authorized faculty assignments, then validate and publish them. New timetable candidates come from Intelligent Scheduling.
+          These are official schedule records. Candidate revisions above do not change these records, and no candidate is shown here until a separate authorized publishing workflow is implemented.
         </p>
       </section>
 

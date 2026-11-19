@@ -1,5 +1,7 @@
 import type { ApiSuccessResponse } from '@/types/api'
 import type {
+  CandidateRevisionStatusEvent,
+  CreateCandidateRevisionInput,
   FacultyAssignmentInput,
   FacultyAssignmentOption,
   ScheduleConflictPreview,
@@ -8,16 +10,22 @@ import type {
   ScheduleFilters,
   ScheduleInput,
   ScheduleRecord,
+  SchedulingCandidateDetail,
+  SchedulingCandidateRevisionDetail,
+  SchedulingCandidateRevisionSummary,
   SchedulingMeetingPlan,
   SchedulingMeetingPlanIndex,
   SchedulingMeetingPlanInput,
   SchedulingOptions,
   SchedulingReadiness,
   SchedulingSolveInput,
-  SchedulingSolveResult,
+  SchedulingSolveResponse,
   SchedulingTimeGrid,
   SchedulingTimeGridIndex,
   SchedulingTimeGridInput,
+  TransitionCandidateRevisionInput,
+  UpdateCandidateRevisionInput,
+  ValidateCandidateRevisionInput,
 } from '@/types/scheduling'
 import { apiClient } from '@/services/api/client'
 
@@ -38,16 +46,93 @@ export async function fetchSchedulingReadiness(termId: number): Promise<Scheduli
   return data.data.readiness
 }
 
-export async function solveScheduling(input: SchedulingSolveInput): Promise<SchedulingSolveResult> {
-  const { data } = await apiClient.post<ApiSuccessResponse<{ result: SchedulingSolveResult }>>(
+export async function solveScheduling(input: SchedulingSolveInput): Promise<SchedulingSolveResponse> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SchedulingSolveResponse>>(
     '/scheduling/solve',
     input,
   )
 
-  return data.data.result
+  return data.data
 }
 
-export async function fetchSchedules(filters: ScheduleFilters): Promise<ScheduleDirectory> {  const { data } = await apiClient.get<ApiSuccessResponse<ScheduleDirectory>>('/schedules', {
+export async function fetchSchedulingCandidate(candidateUuid: string): Promise<SchedulingCandidateDetail> {
+  const { data } = await apiClient.get<ApiSuccessResponse<SchedulingCandidateDetail>>(
+    `/scheduling/candidates/${candidateUuid}`,
+  )
+
+  return data.data
+}
+
+export async function createSchedulingCandidateRevision(
+  candidateUuid: string,
+  input: CreateCandidateRevisionInput,
+): Promise<SchedulingCandidateRevisionSummary> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ revision: SchedulingCandidateRevisionSummary }>>(
+    `/scheduling/candidates/${candidateUuid}/revisions`,
+    input,
+  )
+
+  return data.data.revision
+}
+
+export async function fetchSchedulingCandidateRevision(
+  revisionUuid: string,
+): Promise<SchedulingCandidateRevisionDetail> {
+  const { data } = await apiClient.get<ApiSuccessResponse<SchedulingCandidateRevisionDetail>>(
+    `/scheduling/candidate-revisions/${revisionUuid}`,
+  )
+
+  return data.data
+}
+
+export async function updateSchedulingCandidateRevision(
+  revisionUuid: string,
+  input: UpdateCandidateRevisionInput,
+): Promise<SchedulingCandidateRevisionSummary> {
+  const { data } = await apiClient.patch<ApiSuccessResponse<{ revision: SchedulingCandidateRevisionSummary }>>(
+    `/scheduling/candidate-revisions/${revisionUuid}`,
+    input,
+  )
+
+  return data.data.revision
+}
+
+export async function validateSchedulingCandidateRevision(
+  revisionUuid: string,
+  input: ValidateCandidateRevisionInput,
+): Promise<{ revision: SchedulingCandidateRevisionSummary; errors: string[] }> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ revision: SchedulingCandidateRevisionSummary; errors: string[] }>>(
+    `/scheduling/candidate-revisions/${revisionUuid}/validate`,
+    input,
+  )
+
+  return data.data
+}
+
+export async function transitionSchedulingCandidateRevision(
+  revisionUuid: string,
+  input: TransitionCandidateRevisionInput,
+): Promise<SchedulingCandidateRevisionSummary> {
+  const { data } = await apiClient.post<ApiSuccessResponse<{ revision: SchedulingCandidateRevisionSummary }>>(
+    `/scheduling/candidate-revisions/${revisionUuid}/transition`,
+    input,
+  )
+
+  return data.data.revision
+}
+
+export async function fetchSchedulingCandidateRevisionEvents(
+  revisionUuid: string,
+): Promise<CandidateRevisionStatusEvent[]> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ status_events: CandidateRevisionStatusEvent[] }>>(
+    `/scheduling/candidate-revisions/${revisionUuid}/status-events`,
+  )
+
+  return data.data.status_events
+}
+
+export async function fetchSchedules(filters: ScheduleFilters): Promise<ScheduleDirectory> {
+  const { data } = await apiClient.get<ApiSuccessResponse<ScheduleDirectory>>('/schedules', {
     params: filters,
   })
 

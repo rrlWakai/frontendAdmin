@@ -7,35 +7,41 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
-  LockKeyhole,
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useBlocker } from 'react-router-dom'
 import { Badge } from '@/components/common/Badge'
 import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
+import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { fetchProfessor } from '@/services/api/faculty'
+import { CandidateRevisionPanel } from '@/components/scheduling/CandidateRevisionPanel'
+import { CandidateTimetableGrid } from '@/components/scheduling/CandidateTimetableGrid'
 import { SchedulingConfigurationStage } from '@/components/scheduling/SchedulingConfigurationStage'
+import { durationBetween, formatDuration } from '@/components/scheduling/candidateRevisionModel'
 import {
   fetchOfferingFacultyAssignments,
+  fetchSchedulingCandidate,
   fetchSchedulingReadiness,
   fetchSchedules,
   solveScheduling,
 } from '@/services/api/scheduling'
 import type { AcademicTerm } from '@/types/academic'
 import type {
+  CandidateRevisionStatus,
   ScheduleConflictRecord,
   ScheduleRecord,
+  SchedulingCandidateDetail,
   SchedulingOptions,
   SchedulingReadiness,
-  SchedulingSolveResult,
+  SchedulingSolveResponse,
 } from '@/types/scheduling'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { cn } from '@/utils/cn'
 
-type WorkspaceStage = 'overview' | 'configuration' | 'generation' | 'review' | 'approval'
+type WorkspaceStage = 'readiness' | 'generation' | 'review' | 'revision'
 type ReadinessState = 'ready' | 'warning' | 'blocked' | 'checking' | 'info'
 type BadgeTone = 'neutral' | 'success' | 'warning' | 'info' | 'danger'
 
@@ -67,6 +73,7 @@ interface IntelligentScheduleWorkspaceProps {
   optionsLoading: boolean
   loadError?: string | null
   conflicts: ScheduleConflictRecord[]
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 interface ReadinessCheck {
@@ -156,6 +163,51 @@ function categoryState(checks: ReadinessCheck[]): ReadinessState {
   return 'info'
 }
 
+function solveFailureMessage(error: unknown): string {
+  const response = (error as { response?: { status?: number; data?: { code?: string; message?: string } } }).response
+  const code = response?.data?.code
+  const message = getApiErrorMessage(error, 'Unable to generate a scheduling candidate.')
+
+  if (code === 'scheduling_generation_conflict') {
+    return `Another scheduling generation is already running for this term. ${message}`
+  }
+  if (['stale_source_context', 'generation_lease_expired', 'generation_lease_owner_mismatch', 'solver_response_identity_mismatch'].includes(code ?? '')) {
+    return `Generation inputs changed or the generation lease expired. Review readiness, refresh inputs, and try again. ${message}`
+  }
+  if (response?.status === 503 || response?.status === 502 || code === 'scheduling_service_unavailable') {
+    return `The scheduling service could not complete the request. ${message}`
+  }
+
+  return message
+}
+
+function generationOutcomeMessage(run: SchedulingSolveResponse | null): string | null {
+  if (!run || run.candidate) return null
+
+  const detail = run.generation.failure_message
+  const code = run.generation.failure_code
+  const suffix = [code, detail].filter(Boolean).join(' · ')
+
+  if (run.generation.result_status === 'INFEASIBLE') {
+    return `The solver reported infeasibility and no candidate was persisted.${suffix ? ` ${suffix}` : ''}`
+  }
+  if (run.generation.result_status === 'TIME_LIMIT') {
+    return `The solver stopped at its time limit without a complete candidate.${suffix ? ` ${suffix}` : ''}`
+  }
+  if (run.generation.result_status === 'UNKNOWN' || run.result.result_status === 'UNKNOWN') {
+    return `The solver could not establish a result and no candidate was persisted.${suffix ? ` ${suffix}` : ''}`
+  }
+
+  return `Generation completed without a persisted candidate.${suffix ? ` ${suffix}` : ''}`
+}
+
+function activeCandidateRevision(candidate: SchedulingCandidateDetail | null): CandidateRevisionStatus | null {
+  const statuses = candidate?.revisions
+    .filter((revision) => ['draft', 'under_review', 'validated', 'needs_revision'].includes(revision.status))
+    .sort((left, right) => right.revision_number - left.revision_number) ?? []
+  return statuses[0]?.status ?? null
+}
+
 export function IntelligentScheduleWorkspace({
   termId,
   term,
@@ -163,8 +215,9 @@ export function IntelligentScheduleWorkspace({
   optionsLoading,
   loadError,
   conflicts,
+  onDirtyChange,
 }: IntelligentScheduleWorkspaceProps) {
-  const [stage, setStage] = useState<WorkspaceStage>('overview')
+  const [stage, setStage] = useState<WorkspaceStage>('readiness')
   const [inventory, setInventory] = useState<ScheduleRecord[] | null>(null)
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
@@ -183,12 +236,74 @@ export function IntelligentScheduleWorkspace({
   const [keepRoom, setKeepRoom] = useState(true)
   const [solving, setSolving] = useState(false)
   const [solveError, setSolveError] = useState<string | null>(null)
-  const [candidate, setCandidate] = useState<SchedulingSolveResult | null>(null)
+  const [latestRun, setLatestRun] = useState<SchedulingSolveResponse | null>(null)
+  const [candidateDetail, setCandidateDetail] = useState<SchedulingCandidateDetail | null>(null)
+  const [candidateLoading, setCandidateLoading] = useState(false)
+  const [candidateError, setCandidateError] = useState<string | null>(null)
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null)
+  const [showConfiguration, setShowConfiguration] = useState(false)
+  const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false)
+  const [resetTermId, setResetTermId] = useState(termId)
+  if (resetTermId !== termId) {
+    setResetTermId(termId)
+    setLatestRun(null)
+    setCandidateDetail(null)
+    setCandidateError(null)
+    setGenerationNotice(null)
+    setSolveError(null)
+    setInventory(null)
+    setReadiness(null)
+    setStage('readiness')
+    setShowConfiguration(false)
+    setHasUnsavedEdits(false)
+  }
+  if (!termId && (inventoryLoading || readinessLoading || inventoryError || readinessError)) {
+    setInventory(null)
+    setInventoryLoading(false)
+    setInventoryError(null)
+    setReadiness(null)
+    setReadinessLoading(false)
+    setReadinessError(null)
+  }
+
+  const routeBlocker = useBlocker(({ currentLocation, nextLocation }) => (
+    hasUnsavedEdits && currentLocation.pathname !== nextLocation.pathname
+  ))
 
   useEffect(() => {
-    setCandidate(null)
-    setSolveError(null)
-  }, [termId])
+    if (!hasUnsavedEdits) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasUnsavedEdits])
+
+  useEffect(() => {
+    onDirtyChange?.(false)
+  }, [termId, onDirtyChange])
+
+  const loadCandidate = useCallback(async (candidateUuid: string) => {
+    setCandidateLoading(true)
+    setCandidateError(null)
+    try {
+      const detail = await fetchSchedulingCandidate(candidateUuid)
+      setCandidateDetail(detail)
+      return detail
+    } catch (failure) {
+      setCandidateDetail(null)
+      setCandidateError(getApiErrorMessage(failure, 'Unable to load the persisted scheduling candidate.'))
+      return null
+    } finally {
+      setCandidateLoading(false)
+    }
+  }, [])
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    setHasUnsavedEdits(dirty)
+    onDirtyChange?.(dirty)
+  }, [onDirtyChange])
 
   const offeringSignature = options?.offerings
     .map((offering) => offering.id)
@@ -199,12 +314,8 @@ export function IntelligentScheduleWorkspace({
   )
 
   useEffect(() => {
+    if (!termId) return
     let active = true
-    if (!termId) {
-      setInventory(null)
-      setInventoryLoading(false)
-      return () => { active = false }
-    }
 
     void Promise.resolve().then(async () => {
       setInventoryLoading(true)
@@ -226,13 +337,8 @@ export function IntelligentScheduleWorkspace({
   }, [inventoryVersion, termId])
 
   useEffect(() => {
+    if (!termId) return
     let active = true
-    if (!termId) {
-      setReadiness(null)
-      setReadinessLoading(false)
-      setReadinessError(null)
-      return () => { active = false }
-    }
 
     void Promise.resolve().then(async () => {
       setReadinessLoading(true)
@@ -773,17 +879,30 @@ export function IntelligentScheduleWorkspace({
 
     setSolving(true)
     setSolveError(null)
+    setGenerationNotice(null)
 
     try {
-      const result = await solveScheduling({ academic_term_id: termId })
-      setCandidate(result)
-      setStage('review')
+      const run = await solveScheduling({ academic_term_id: termId })
+      setLatestRun(run)
+      if (run.candidate?.uuid) {
+        await loadCandidate(run.candidate.uuid)
+        setStage('review')
+      } else {
+        setCandidateDetail(null)
+        setGenerationNotice(generationOutcomeMessage(run))
+        setStage('generation')
+      }
     } catch (failure) {
-      setSolveError(getApiErrorMessage(failure, 'Unable to generate a scheduling candidate.'))
+      setSolveError(solveFailureMessage(failure))
     } finally {
       setSolving(false)
     }
-  }, [generationReady, termId])
+  }, [generationReady, loadCandidate, termId])
+
+  const requestStageChange = useCallback((next: WorkspaceStage) => {
+    if (hasUnsavedEdits && next !== stage && !window.confirm('Leave this revision stage? Unsaved edits will be discarded.')) return
+    setStage(next)
+  }, [hasUnsavedEdits, stage])
 
   async function handleCheckAssignments() {
     try {
@@ -800,61 +919,64 @@ export function IntelligentScheduleWorkspace({
     ))
   }
 
-  const configurationReady = Boolean(
-    readiness?.capabilities.time_grid && readiness.capabilities.meeting_plans,
-  )
   const stageStatus: Record<WorkspaceStage, string> = {
-    overview: stateLabel(readinessState),
-    configuration: configurationReady ? 'Approved' : 'Needs setup',
-    generation: solving ? 'Running' : blockingCount ? `${blockingCount} blocking` : 'Configured',
-    review: candidate ? candidate.solver_status : 'No candidate',
-    approval: 'No candidate',
+    readiness: stateLabel(readinessState),
+    generation: solving
+      ? 'Running'
+      : latestRun?.generation.result_status ?? latestRun?.generation.status ?? 'Not generated',
+    review: latestRun?.candidate ? `${latestRun.candidate.assignment_count} placements` : 'No candidate',
+    revision: activeCandidateRevision(candidateDetail)
+      ? `Active ${activeCandidateRevision(candidateDetail)?.replaceAll('_', ' ')}`
+      : 'No revision',
   }
 
   return (
     <div className="space-y-4">
-      <WorkspaceSteps stage={stage} onChange={setStage} status={stageStatus} />
+      <WorkspaceSteps stage={stage} onChange={requestStageChange} status={stageStatus} />
 
-      {stage === 'overview' ? (
-        <OverviewStage
-          term={term}
-          optionsLoading={optionsLoading}
-          loadError={loadError}
-          programCount={programCount}
-          sectionCount={sectionCount}
-          offeringCount={configuredOfferings.length}
-          hasCurrentAssignmentCheck={hasCurrentAssignmentCheck}
-          assignmentReadiness={assignmentReadiness}
-          readinessState={readinessState}
-          blockingCount={blockingCount}
-          warningCount={warningCount}
-          categories={categories}
-          assignmentLoading={assignmentLoading}
-          assignmentError={assignmentError}
-          hasConfiguredOfferings={configuredOfferings.length > 0}
-          canGenerate={generationReady}
-          generationReason={generationReason}
-          onGenerate={() => void handleGenerate()}
-          isGenerating={solving}
-          solveError={solveError}
-          onCheckAssignments={() => void handleCheckAssignments()}
-          onRefreshInventory={() => {
-            setInventoryVersion((value) => value + 1)
-            setReadinessVersion((value) => value + 1)
-          }}
-          inventoryLoading={inventoryLoading}
-        />
-      ) : null}
-
-      {stage === 'configuration' ? (
-        <SchedulingConfigurationStage
-          key={termId ?? 'no-term'}
-          termId={termId}
-          onConfigurationChanged={() => {
-            setReadinessVersion((value) => value + 1)
-            setInventoryVersion((value) => value + 1)
-          }}
-        />
+      {stage === 'readiness' ? (
+        <>
+          <OverviewStage
+            term={term}
+            optionsLoading={optionsLoading}
+            loadError={loadError}
+            programCount={programCount}
+            sectionCount={sectionCount}
+            offeringCount={configuredOfferings.length}
+            hasCurrentAssignmentCheck={hasCurrentAssignmentCheck}
+            assignmentReadiness={assignmentReadiness}
+            readinessState={readinessState}
+            blockingCount={blockingCount}
+            warningCount={warningCount}
+            categories={categories}
+            assignmentLoading={assignmentLoading}
+            assignmentError={assignmentError}
+            hasConfiguredOfferings={configuredOfferings.length > 0}
+            canGenerate={generationReady}
+            generationReason={generationReason}
+            onGenerate={() => void handleGenerate()}
+            isGenerating={solving}
+            solveError={solveError}
+            onCheckAssignments={() => void handleCheckAssignments()}
+            onRefreshInventory={() => {
+              setInventoryVersion((value) => value + 1)
+              setReadinessVersion((value) => value + 1)
+            }}
+            inventoryLoading={inventoryLoading}
+            configurationOpen={showConfiguration}
+            onToggleConfiguration={() => setShowConfiguration((value) => !value)}
+          />
+          {showConfiguration ? (
+            <SchedulingConfigurationStage
+              key={termId ?? 'no-term'}
+              termId={termId}
+              onConfigurationChanged={() => {
+                setReadinessVersion((value) => value + 1)
+                setInventoryVersion((value) => value + 1)
+              }}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {stage === 'generation' ? (
@@ -878,23 +1000,60 @@ export function IntelligentScheduleWorkspace({
           onGenerate={() => void handleGenerate()}
           isGenerating={solving}
           solveError={solveError}
+          latestRun={latestRun}
+          generationNotice={generationNotice}
         />
       ) : null}
 
       {stage === 'review' ? (
         <ReviewStage
-          candidate={candidate}
+          run={latestRun}
+          candidateDetail={candidateDetail}
+          candidateLoading={candidateLoading}
+          candidateError={candidateError}
+          options={options}
           publishedCount={publishedSchedules.length}
-          onGoToGeneration={() => setStage('generation')}
+          onGoToGeneration={() => requestStageChange('generation')}
+          onGoToRevision={() => requestStageChange('revision')}
         />
       ) : null}
 
-      {stage === 'approval' ? (
-        <ApprovalStage
-          publishedCount={publishedSchedules.length}
-          draftCount={draftSchedules.length}
-          inventoryLoading={inventoryLoading}
-          inventoryError={inventoryError}
+      {stage === 'revision' ? (
+        candidateDetail ? (
+          <CandidateRevisionPanel
+            candidate={candidateDetail}
+            options={options}
+            onDirtyChange={handleDirtyChange}
+            onCandidateChanged={async () => {
+              const uuid = latestRun?.candidate?.uuid
+              if (uuid) await loadCandidate(uuid)
+            }}
+          />
+        ) : (
+          <Card>
+            <EmptyState
+              icon={CalendarDays}
+              title="No persisted candidate to revise"
+              description="Generate a candidate first. Revisions are created against the persisted candidate and its original snapshot."
+              action={(
+                <Button variant="outline" onClick={() => requestStageChange('generation')} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+                  Go to generation
+                </Button>
+              )}
+            />
+          </Card>
+        )
+      ) : null}
+
+      {routeBlocker.state === 'blocked' ? (
+        <ConfirmationDialog
+          title="Discard unsaved revision changes?"
+          description="You have unsaved candidate revision edits. If you leave this page, those edits will be lost."
+          confirmLabel="Leave page"
+          cancelLabel="Stay"
+          destructive
+          onClose={() => routeBlocker.reset()}
+          onConfirm={() => routeBlocker.proceed()}
         />
       ) : null}
     </div>
@@ -910,12 +1069,11 @@ function WorkspaceSteps({
   onChange: (stage: WorkspaceStage) => void
   status: Record<WorkspaceStage, string>
 }) {
-  const steps: Array<{ id: WorkspaceStage; label: string; locked?: boolean }> = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'configuration', label: 'Configuration' },
+  const steps: Array<{ id: WorkspaceStage; label: string }> = [
+    { id: 'readiness', label: 'Readiness' },
     { id: 'generation', label: 'Generation' },
-    { id: 'review', label: 'Timetable review', locked: true },
-    { id: 'approval', label: 'Approval', locked: true },
+    { id: 'review', label: 'Candidate review' },
+    { id: 'revision', label: 'Revision and validation' },
   ]
 
   return (
@@ -946,7 +1104,6 @@ function WorkspaceSteps({
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold">
                     {step.label}
-                    {step.locked ? <LockKeyhole className="size-3.5" aria-hidden="true" /> : null}
                   </span>
                   <span className="mt-0.5 block whitespace-nowrap text-[11px] font-medium text-ink-muted">
                     {status[step.id]}
@@ -985,6 +1142,8 @@ function OverviewStage({
   onCheckAssignments,
   onRefreshInventory,
   inventoryLoading,
+  configurationOpen,
+  onToggleConfiguration,
 }: {
   term: AcademicTerm | undefined
   optionsLoading: boolean
@@ -1009,6 +1168,8 @@ function OverviewStage({
   onCheckAssignments: () => void
   onRefreshInventory: () => void
   inventoryLoading: boolean
+  configurationOpen: boolean
+  onToggleConfiguration: () => void
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -1060,6 +1221,9 @@ function OverviewStage({
                 onClick={onCheckAssignments}
               >
                 {hasCurrentAssignmentCheck ? 'Recheck assignments' : 'Check assignments'}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={onToggleConfiguration}>
+                {configurationOpen ? 'Hide configuration' : 'Open configuration'}
               </Button>
             </div>
           </CardHeader>
@@ -1256,6 +1420,8 @@ function GenerationStage({
   onGenerate,
   isGenerating,
   solveError,
+  latestRun,
+  generationNotice,
 }: {
   term: AcademicTerm | undefined
   inventoryLoading: boolean
@@ -1276,6 +1442,8 @@ function GenerationStage({
   onGenerate: () => void
   isGenerating: boolean
   solveError: string | null
+  latestRun: SchedulingSolveResponse | null
+  generationNotice: string | null
 }) {
   const baselineValue = inventoryLoading
     ? 'Loading published records…'
@@ -1311,6 +1479,42 @@ function GenerationStage({
                 detail="The whole term is scheduled together. Sections cannot be generated independently."
               />
             </dl>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader className="py-4">
+            <h2 className="text-sm font-semibold text-ink">Latest generation</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">Outcome returned by the backend for this term.</p>
+          </CardHeader>
+          <CardBody>
+            {generationNotice ? (
+              <p role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                {generationNotice}
+              </p>
+            ) : null}
+            {latestRun ? (
+              <dl>
+                <DefinitionRow label="Generation" value={latestRun.generation.uuid} detail={`Status: ${latestRun.generation.status}`} />
+                <DefinitionRow label="Solver outcome" value={`${latestRun.result.solver_status} · ${latestRun.result.result_status}`} />
+                <DefinitionRow label="Execution duration" value={`${latestRun.result.solver_execution_ms} ms`} detail={`Completed: ${latestRun.result.completed_at}`} />
+                <DefinitionRow
+                  label="Validation"
+                  value={latestRun.result.validation_summary.independent_validation_status}
+                  detail={`${latestRun.result.validation_summary.scheduled_meeting_count} scheduled · ${latestRun.result.validation_summary.represented_offering_count} of ${latestRun.result.validation_summary.required_offering_count} offerings represented`}
+                />
+                {latestRun.generation.failure_code || latestRun.generation.failure_message ? (
+                  <DefinitionRow
+                    label="Failure detail"
+                    value={latestRun.generation.failure_code ?? 'Not coded'}
+                    detail={latestRun.generation.failure_message ?? undefined}
+                  />
+                ) : null}
+                <DefinitionRow label="Persisted candidate" value={latestRun.candidate ? `${latestRun.candidate.uuid} · version ${latestRun.candidate.version}` : 'None'} />
+              </dl>
+            ) : (
+              <p className="text-xs text-ink-muted">No generation has been run in this workspace for the selected term.</p>
+            )}
           </CardBody>
         </Card>
 
@@ -1435,7 +1639,7 @@ function GenerationStage({
               </p>
             ) : null}
             <p className="text-[11px] leading-4 text-ink-muted">
-              The candidate is returned for review only. Nothing is saved or published automatically.
+              A feasible candidate is persisted for review. Nothing is published or written to official schedule records.
             </p>
           </CardBody>
         </Card>
@@ -1494,39 +1698,63 @@ function PreferenceCheckbox({
 }
 
 function ReviewStage({
-  candidate,
+  run,
+  candidateDetail,
+  candidateLoading,
+  candidateError,
+  options,
   publishedCount,
   onGoToGeneration,
+  onGoToRevision,
 }: {
-  candidate: SchedulingSolveResult | null
+  run: SchedulingSolveResponse | null
+  candidateDetail: SchedulingCandidateDetail | null
+  candidateLoading: boolean
+  candidateError: string | null
+  options: SchedulingOptions | null
   publishedCount: number
   onGoToGeneration: () => void
+  onGoToRevision: () => void
 }) {
-  if (!candidate) {
+  if (!run?.candidate) {
     return (
       <Card>
         <EmptyState
           icon={CalendarDays}
-          title="No generated timetable to review"
-          description="A generated candidate will appear here as a filterable weekly timetable. The current published timetable remains active while no candidate exists."
+          title="No persisted candidate to review"
+          description="Run generation to create a candidate for this term. A persisted candidate is required before revisions can be created."
           action={(
             <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
-              Go to generation setup
+              Go to generation
             </Button>
           )}
         />
         <div className="border-t border-line px-6 py-4">
           <p className="text-xs leading-5 text-ink-muted">
-            The review stage will include the master timetable, unscheduled-meeting diagnostics, professor workload, room utilization, and a published-baseline comparison.
-            {publishedCount ? ` ${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} are currently active.` : ''}
+            {publishedCount
+              ? `${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} remain active and are unaffected.`
+              : 'No published timetable exists for this term yet.'}
           </p>
         </div>
       </Card>
     )
   }
 
-  const summary = candidate.validation_summary
-  const tone: BadgeTone = summary.complete_candidate && summary.independent_validation_status === 'passed' ? 'success' : 'warning'
+  const result = run.result
+  const summary = result.validation_summary
+  const tone: BadgeTone = summary.complete_candidate && summary.independent_validation_status === 'passed' && run.generation.result_status === 'FEASIBLE'
+    ? 'success'
+    : 'warning'
+  const roomUsage = new Map<string, { room: string; minutes: number; placements: number }>()
+  for (const assignment of result.assignments) {
+    const roomId = assignment.room_id ?? 'unassigned'
+    const room = options?.rooms.find((item) => String(item.id) === roomId)?.code ?? (assignment.room_id ? roomId : 'No room assigned')
+    const current = roomUsage.get(roomId) ?? { room, minutes: 0, placements: 0 }
+    current.minutes += durationBetween(assignment.start_time, assignment.end_time)
+    current.placements += 1
+    roomUsage.set(roomId, current)
+  }
+  const roomRows = [...roomUsage.values()].sort((left, right) => right.minutes - left.minutes)
 
   return (
     <div className="space-y-5">
@@ -1535,160 +1763,129 @@ function ReviewStage({
           <div>
             <h2 className="text-sm font-semibold text-ink">Generated candidate</h2>
             <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-              Returned for review only. Nothing is saved or published automatically.
+              Original solver output persisted for this generation. Review revisions are separate and do not overwrite it.
             </p>
           </div>
-          <Badge tone={tone}>{candidate.solver_status}</Badge>
+          <Badge tone={tone}>{run.generation.result_status ?? result.result_status}</Badge>
         </CardHeader>
         <CardBody>
           <dl>
+            <DefinitionRow label="Candidate" value={run.candidate.uuid} detail={`Version ${run.candidate.version} · ${run.candidate.assignment_count} placements`} />
+            <DefinitionRow label="Generation" value={run.generation.uuid} detail={`${run.generation.status} · completed ${run.generation.completed_at ?? 'not recorded'}`} />
+            <DefinitionRow label="Solver outcome" value={`${result.solver_status} · ${result.result_status}`} detail={`Execution ${result.solver_execution_ms} ms`} />
             <DefinitionRow
               label="Scheduled meetings"
               value={`${summary.scheduled_meeting_count} of ${summary.required_mandatory_meeting_count} required`}
               detail={`${summary.desired_meeting_count} meetings requested in total.`}
             />
-            <DefinitionRow
-              label="Offerings represented"
-              value={`${summary.represented_offering_count} of ${summary.required_offering_count}`}
-            />
+            <DefinitionRow label="Offerings represented" value={`${summary.represented_offering_count} of ${summary.required_offering_count}`} />
             <DefinitionRow label="Independent validation" value={summary.independent_validation_status} />
             <DefinitionRow
-              label="Objective value"
-              value={candidate.objective_value === null || candidate.objective_value === undefined ? 'Not reported' : candidate.objective_value.toFixed(2)}
+              label="Published baseline"
+              value={publishedCount ? `${publishedCount} active record${publishedCount === 1 ? '' : 's'}` : 'None'}
+              detail="Reference context only; generation never overwrites published records."
             />
-            <DefinitionRow label="Solver time" value={`${candidate.solver_execution_ms} ms`} />
             <DefinitionRow
-              label="Diagnostics"
-              value={`${candidate.diagnostics.length} diagnostic${candidate.diagnostics.length === 1 ? '' : 's'}, ${candidate.warnings.length} warning${candidate.warnings.length === 1 ? '' : 's'}`}
+              label="Objective value"
+              value={result.objective_value === null || result.objective_value === undefined ? 'Not reported' : result.objective_value.toFixed(2)}
             />
-            <DefinitionRow label="Generation ID" value={candidate.generation_id} />
+            <DefinitionRow label="Revisions" value={candidateLoading ? 'Loading…' : `${candidateDetail?.revisions.length ?? 0}`} />
           </dl>
-          {summary.validation_errors.length ? (
-            <ul className="mt-4 space-y-1 text-xs leading-5 text-red-800">
-              {summary.validation_errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
+          {candidateError ? (
+            <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">{candidateError}</p>
           ) : null}
         </CardBody>
       </Card>
+
+      <CandidateTimetableGrid
+        assignments={result.assignments}
+        parentAssignments={null}
+        options={options}
+        diagnostics={result.diagnostics}
+        validationErrors={summary.validation_errors}
+        selectedId={null}
+        onSelect={() => undefined}
+      />
+
+      <Card>
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-maroon-600 [&::-webkit-details-marker]:hidden">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Diagnostics and workload</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {result.diagnostics.length} diagnostics · {result.warnings.length} warnings · {result.workload_metrics.length} professor metrics · {roomRows.length} rooms used
+              </p>
+            </div>
+            <ChevronDown className="size-4 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <div className="space-y-3 border-t border-line p-5">
+            {result.diagnostics.length ? (
+              <ul className="space-y-2">
+                {result.diagnostics.map((diagnostic) => (
+                  <li key={`${diagnostic.code}-${diagnostic.message}`} className="rounded-lg border border-line bg-surface-soft p-3 text-xs leading-5 text-ink">
+                    <p className="font-semibold">{diagnostic.code} · {diagnostic.evidence}</p>
+                    <p className="mt-0.5 text-ink-muted">{diagnostic.message}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-xs text-ink-muted">No solver diagnostics were returned.</p>}
+            {result.warnings.length ? (
+              <ul className="space-y-1">
+                {result.warnings.map((warning) => (
+                  <li key={`${warning.code}-${warning.message}`} className="text-xs leading-5 text-amber-900">{warning.message}</li>
+                ))}
+              </ul>
+            ) : null}
+            {result.workload_metrics.length ? (
+              <div className="overflow-x-auto rounded-lg border border-line">
+                <table className="w-full min-w-[560px] text-left text-xs">
+                  <thead className="bg-surface-soft text-ink-muted">
+                    <tr><th className="px-3 py-2">Professor</th><th className="px-3 py-2">Assigned</th><th className="px-3 py-2">Target</th><th className="px-3 py-2">Deviation</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {result.workload_metrics.map((metric) => (
+                      <tr key={metric.professor_id}>
+                        <td className="px-3 py-2 font-medium text-ink">{metric.professor_id}</td>
+                        <td className="px-3 py-2">{metric.assigned_teaching_minutes} min</td>
+                        <td className="px-3 py-2">{metric.weekly_target_minutes === null ? 'Not set' : `${metric.weekly_target_minutes} min`}</td>
+                        <td className="px-3 py-2">{metric.signed_target_deviation_minutes ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {roomRows.length ? (
+              <div className="overflow-x-auto rounded-lg border border-line">
+                <table className="w-full min-w-[480px] text-left text-xs">
+                  <thead className="bg-surface-soft text-ink-muted">
+                    <tr><th className="px-3 py-2">Room</th><th className="px-3 py-2">Placements</th><th className="px-3 py-2">Scheduled time</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {roomRows.map((row) => (
+                      <tr key={row.room}>
+                        <td className="px-3 py-2 font-medium text-ink">{row.room}</td>
+                        <td className="px-3 py-2">{row.placements}</td>
+                        <td className="px-3 py-2">{formatDuration(row.minutes)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      </Card>
+
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={onGoToGeneration} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
-          Back to generation setup
+        <Button onClick={onGoToRevision} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+          Open revision and validation
+        </Button>
+        <Button variant="outline" onClick={onGoToGeneration}>
+          Back to generation
         </Button>
       </div>
     </div>
-  )
-}
-
-function ApprovalStage({
-  publishedCount,
-  draftCount,
-  inventoryLoading,
-  inventoryError,
-}: {
-  publishedCount: number
-  draftCount: number
-  inventoryLoading: boolean
-  inventoryError: string | null
-}) {
-  const publishedBadge = inventoryLoading
-    ? 'Checking'
-    : inventoryError
-      ? 'Unavailable'
-      : publishedCount
-        ? 'Active'
-        : 'None'
-  const publishedTone: BadgeTone = inventoryLoading
-    ? 'info'
-    : inventoryError
-      ? 'neutral'
-      : publishedCount
-        ? 'success'
-        : 'neutral'
-  const publishedDetail = inventoryLoading
-    ? 'Loading the published timetable…'
-    : inventoryError
-      ? 'The published timetable could not be loaded.'
-      : publishedCount
-        ? `${publishedCount} published schedule record${publishedCount === 1 ? '' : 's'} remain active.`
-        : 'No published timetable exists for this term yet.'
-
-  return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader className="py-4">
-          <h2 className="text-sm font-semibold text-ink">Candidate lifecycle</h2>
-          <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-            A candidate moves through generation, review, approval, and publication. Only the published timetable affects live records.
-          </p>
-        </CardHeader>
-        <ol className="divide-y divide-line">
-          <LifecycleRow
-            index={1}
-            title="Generated candidate"
-            badge="Not generated"
-            tone="neutral"
-            detail="No complete-semester generation has produced a candidate."
-          />
-          <LifecycleRow
-            index={2}
-            title="Draft candidate"
-            badge="Unavailable"
-            tone="neutral"
-            detail={`Saving a candidate is not available yet. ${draftCount} existing draft schedule record${draftCount === 1 ? '' : 's'} are preserved and are not selected for replacement by default.`}
-          />
-          <LifecycleRow
-            index={3}
-            title="Approved candidate"
-            badge="Unavailable"
-            tone="neutral"
-            detail="Approval actions and authorized approver roles are not available yet."
-          />
-          <LifecycleRow
-            index={4}
-            title="Published timetable"
-            badge={publishedBadge}
-            tone={publishedTone}
-            detail={publishedDetail}
-          />
-        </ol>
-      </Card>
-
-      <p className="flex items-start gap-2 text-xs leading-5 text-ink-muted">
-        <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        The current published timetable remains active while a candidate is reviewed. Nothing on this page overwrites, deletes, or automatically replaces published schedules or drafts.
-      </p>
-    </div>
-  )
-}
-
-function LifecycleRow({
-  index,
-  title,
-  badge,
-  tone,
-  detail,
-}: {
-  index: number
-  title: string
-  badge: string
-  tone: BadgeTone
-  detail: string
-}) {
-  return (
-    <li className="flex items-start gap-3 px-5 py-4">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface-soft text-xs font-semibold text-ink-muted">
-        {index}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-ink">{title}</p>
-          <Badge tone={tone}>{badge}</Badge>
-        </div>
-        <p className="mt-1 text-xs leading-5 text-ink-muted">{detail}</p>
-      </div>
-    </li>
   )
 }
 
