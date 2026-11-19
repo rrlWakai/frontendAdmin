@@ -203,12 +203,6 @@ interface SectionDialogProps {
 
 function SectionDialog({ section, options, defaultTermId, onCancel, onSaved }: SectionDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const initialProgram = section
-    ? options.programs.find((program) => program.id === section.program_id)
-    : undefined
-  const initialYearLevel = section
-    ? options.year_levels.find((level) => level.id === section.year_level_id)
-    : undefined
   const initialMajor = section ? toMajor(section.major, section.program_id) : null
   const [values, setValues] = useState<SectionFormState>(() => ({
     program_id: asText(section?.program_id),
@@ -1058,9 +1052,9 @@ export function SectionsPage() {
 
                   <div className="mt-3 space-y-4">
                     {group.levels.map((level) => (
-                      <div key={level.id} className="rounded-lg border border-line">
+                      <div key={level.level.id} className="rounded-lg border border-line">
                         <div className="flex items-center justify-between gap-2 border-b border-line bg-stone-50 px-3 py-2">
-                          <p className="text-sm font-semibold text-ink">{level.name}</p>
+                          <p className="text-sm font-semibold text-ink">{level.level.name}</p>
                           <p className="text-xs text-ink-muted">{level.sections.length} section{level.sections.length === 1 ? '' : 's'}</p>
                         </div>
 
