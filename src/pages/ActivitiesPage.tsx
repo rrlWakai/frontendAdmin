@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -937,8 +938,8 @@ export function ActivitiesPage() {
       description: action === 'publish'
         ? `Publish "${announcement.title}"? A future publication date will keep it scheduled.`
         : `Archive "${announcement.title}"? Its linked activity stays available. Archived announcements cannot be edited or published.`,
-      confirmLabel: action === 'publish' ? 'Publish' : 'Archive',
-      cancelLabel: 'Keep as is',
+      confirmLabel: action === 'publish' ? 'Publish announcement' : 'Archive announcement',
+      cancelLabel: 'Cancel',
       destructive: action === 'archive',
       onConfirm: async () => {
         setConfirmDialog(null)
@@ -971,7 +972,7 @@ export function ActivitiesPage() {
         description="Manage campus activities and the announcements that communicate them."
         actions={canManage ? (
           <Button leftIcon={<Plus className="size-4" aria-hidden="true" />} onClick={() => setCreateChoiceOpen(true)}>
-            Create
+            Create activity or announcement
           </Button>
         ) : null}
       />
@@ -1072,7 +1073,7 @@ export function ActivitiesPage() {
                               <span>{item.title}</span>
                               <Badge>{formatLabel(item.publication_state)}</Badge>
                               <Button type="button" size="sm" variant="ghost" onClick={() => openAnnouncement(item.id)}>
-                                Manage
+                                Open announcement
                               </Button>
                             </li>
                           ))}
@@ -1215,7 +1216,7 @@ export function ActivitiesPage() {
                                     <span>{item.title}</span>
                                     <Badge>{formatLabel(item.publication_state)}</Badge>
                                     <span className="text-xs text-ink-muted">{formatDate(item.published_at)}</span>
-                                    <Button type="button" size="sm" variant="ghost" onClick={() => openAnnouncement(item.id)}>Manage</Button>
+<Button type="button" size="sm" variant="ghost" onClick={() => openAnnouncement(item.id)}>Open announcement</Button>
                                   </li>
                                 ))}
                               </ul>

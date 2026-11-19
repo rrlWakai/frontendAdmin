@@ -315,7 +315,7 @@ export function FacultyPage() {
       title: `${verb.charAt(0).toUpperCase() + verb.slice(1)} faculty account`,
       description: `Are you sure you want to ${verb} ${professor.name}'s account?`,
       confirmLabel: `${verb.charAt(0).toUpperCase() + verb.slice(1)} account`,
-      cancelLabel: 'Keep as is',
+      cancelLabel: 'Cancel',
       destructive: nextStatus === 'inactive',
       onConfirm: async () => {
         setConfirmDialog(null)
@@ -371,7 +371,7 @@ export function FacultyPage() {
     setConfirmDialog({
       title: 'Remove availability window',
       description: 'This faculty availability window will be removed. This action cannot be undone.',
-      confirmLabel: 'Remove',
+      confirmLabel: 'Remove availability window',
       cancelLabel: 'Keep',
       destructive: true,
       onConfirm: async () => {

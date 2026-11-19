@@ -18,6 +18,7 @@ import { Card, CardBody } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
+import { useFeedback } from '@/components/common/Feedback'
 import { TextField } from '@/components/common/TextField'
 import {
   archiveAnnouncement,
@@ -166,6 +167,7 @@ function HistoryDialog({
 }
 
 export function AnnouncementsPage() {
+  const feedback = useFeedback()
   const { user } = useAuth()
   const canManage = user?.role === 'administrator' || user?.role === 'department_personnel'
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -248,8 +250,8 @@ export function AnnouncementsPage() {
     setConfirmDialog({
       title,
       description,
-      confirmLabel: action === 'publish' ? 'Publish' : 'Archive',
-      cancelLabel: 'Keep as is',
+      confirmLabel: action === 'publish' ? 'Publish announcement' : 'Archive announcement',
+      cancelLabel: 'Cancel',
       destructive: action === 'archive',
       onConfirm: async () => {
         setConfirmDialog(null)
@@ -258,8 +260,10 @@ export function AnnouncementsPage() {
         setSuccess(null)
         try {
           if (action === 'publish') {
-            await publishAnnouncement(announcement.id)
-            setSuccess('Announcement published or scheduled.')
+            const published = await publishAnnouncement(announcement.id)
+            feedback.success(published.publication_state === 'scheduled' && published.published_at
+              ? `${announcement.title} is scheduled for ${new Date(published.published_at).toLocaleString()}.`
+              : `${announcement.title} was published.`)
           } else {
             await archiveAnnouncement(announcement.id)
             setSuccess('Announcement archived.')
@@ -282,7 +286,7 @@ export function AnnouncementsPage() {
         description="Create, publish, and review official announcements for the college community."
         actions={canManage ? (
           <Button leftIcon={<Plus className="size-4" aria-hidden="true" />} onClick={() => setDialogAnnouncement(null)}>
-            Create
+            Create announcement
           </Button>
         ) : null}
       />

@@ -818,7 +818,7 @@ export function SchedulingPage() {
                       <td className="whitespace-nowrap px-4 py-3.5 capitalize text-ink-muted lg:px-5">{schedule.modality.replaceAll('_', ' ')}</td>
                       <td className="px-4 py-3.5 lg:px-5"><Badge tone={statusTone(schedule.status)}>{schedule.status}</Badge></td>
                       <td className="px-4 py-3.5 text-right lg:px-5">
-                        <Button variant="outline" size="sm" onClick={() => manageSchedule(schedule)}>Manage</Button>
+<Button variant="outline" size="sm" onClick={() => manageSchedule(schedule)}>Open schedule</Button>
                       </td>
                     </tr>
                   ))}
@@ -858,7 +858,7 @@ export function SchedulingPage() {
                     </div>
                   </dl>
                   <div className="mt-3 flex justify-end">
-                    <Button variant="outline" size="sm" onClick={() => manageSchedule(schedule)}>Manage</Button>
+                    <Button variant="outline" size="sm" onClick={() => manageSchedule(schedule)}>Open schedule</Button>
                   </div>
                 </div>
               ))}

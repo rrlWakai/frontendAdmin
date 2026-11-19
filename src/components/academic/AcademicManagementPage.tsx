@@ -327,7 +327,7 @@ function AcademicRecordDialog<T extends AcademicRecord>({
             Cancel
           </Button>
           <Button type="submit" isLoading={isSaving}>
-            Save {config.singular.toLowerCase()}
+            {record ? 'Save changes' : `Create ${config.singular.toLowerCase()}`}
           </Button>
         </div>
       </form>

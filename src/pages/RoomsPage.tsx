@@ -190,7 +190,7 @@ export function RoomsPage() {
       title: `${action.charAt(0).toUpperCase() + action.slice(1)} room`,
       description: message,
       confirmLabel: `${action.charAt(0).toUpperCase() + action.slice(1)} room`,
-      cancelLabel: 'Keep as is',
+      cancelLabel: 'Cancel',
       destructive: nextStatus === 'unavailable',
       onConfirm: async () => {
         setConfirmDialog(null)

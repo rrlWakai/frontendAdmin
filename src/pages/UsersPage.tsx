@@ -226,7 +226,7 @@ export function UsersPage() {
       title: `${verb.charAt(0).toUpperCase() + verb.slice(1)} account`,
       description: `Are you sure you want to ${verb} ${account.name}'s account?`,
       confirmLabel: `${verb.charAt(0).toUpperCase() + verb.slice(1)} account`,
-      cancelLabel: 'Keep as is',
+      cancelLabel: 'Cancel',
       destructive: nextStatus === 'inactive',
       onConfirm: async () => {
         setConfirmDialog(null)

@@ -11,6 +11,7 @@ import {
   Sparkles,
   Users,
   UserRound,
+  UsersRound,
   X,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -61,6 +62,7 @@ function getBranchKey(item: NavigationParent, pathname: string): string {
 
 const academicChildren: NavigationChild[] = [
   { label: 'Programs', to: '/academic', end: true },
+  { label: 'Academic years', to: '/academic/academic-years' },
   { label: 'Majors', to: '/academic/majors' },
   { label: 'Curriculum', to: '/academic/curriculum' },
   { label: 'Academic Terms', to: '/academic/terms' },
@@ -87,7 +89,7 @@ const navigation: NavigationGroup[] = [
       },
       { label: 'Subjects', to: '/subjects', icon: Library },
       { label: 'Class assignments', to: '/academic/subject-offerings', icon: BookOpenCheck },
-      { label: 'Faculty', to: '/faculty', icon: GraduationCap },
+      { label: 'Faculty', to: '/faculty', icon: UsersRound },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],
   },
