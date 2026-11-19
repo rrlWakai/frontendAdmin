@@ -112,6 +112,13 @@ export interface SchedulingReadiness {
     ready: { ok: boolean; checked_at: string }
     checked_at: string
   }
+  scheduler_status?: {
+    state: string
+    diagnostic: string
+    url_configured: boolean
+    api_key_configured: boolean
+    contract_compatible: boolean
+  }
   inspected_at: string
 }
 

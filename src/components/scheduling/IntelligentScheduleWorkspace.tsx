@@ -392,6 +392,7 @@ export function IntelligentScheduleWorkspace({
 
   const readinessIssues = readiness?.issues ?? []
   const schedulerServiceStatus = readiness?.scheduler_service
+  const schedulerState = readiness?.scheduler_status
   const integrationChecks: ReadinessCheck[] = [
     {
       title: 'Scheduling engine liveness',
@@ -399,7 +400,7 @@ export function IntelligentScheduleWorkspace({
         ? 'Checking the scheduling engine process…'
         : schedulerServiceStatus?.live.ok
           ? 'The deployed scheduling engine is reachable.'
-          : 'The deployed scheduling engine did not pass its liveness check.',
+          : schedulerState?.diagnostic ?? 'The deployed scheduling engine did not pass its liveness check.',
       state: readinessLoading
         ? 'checking'
         : schedulerServiceStatus?.live.ok
@@ -412,7 +413,7 @@ export function IntelligentScheduleWorkspace({
         ? 'Checking authenticated solver readiness…'
         : schedulerServiceStatus?.ready.ok
           ? 'The OR-Tools solver is ready to accept contract requests.'
-          : 'The solver is not ready or the shared service credentials were rejected.',
+          : schedulerState?.diagnostic ?? 'The solver is not ready or the shared service credentials were rejected.',
       state: readinessLoading
         ? 'checking'
         : schedulerServiceStatus?.ready.ok
