@@ -1,12 +1,9 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 import { AdminLayout } from '@/layouts/AdminLayout'
-import { AcademicStructurePage } from '@/pages/AcademicStructurePage'
-import { AcademicPage } from '@/pages/AcademicPage'
 import { AcademicTermsPage } from '@/pages/AcademicTermsPage'
 import { AcademicYearsPage } from '@/pages/AcademicYearsPage'
 import { CurriculumRequirementsPage } from '@/pages/CurriculumRequirementsPage'
-import { MajorsPage } from '@/pages/MajorsPage'
 import { ActivitiesPage } from '@/pages/ActivitiesPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FacultyPage } from '@/pages/FacultyPage'
@@ -20,7 +17,6 @@ import { SubjectOfferingsPage } from '@/pages/SubjectOfferingsPage'
 import { SubjectsPage } from '@/pages/SubjectsPage'
 import { UnauthorizedPage } from '@/pages/UnauthorizedPage'
 import { UsersPage } from '@/pages/UsersPage'
-import { YearLevelsPage } from '@/pages/YearLevelsPage'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import type { RouteHandle } from '@/routes/types'
 
@@ -55,23 +51,12 @@ const routes: RouteObject[] = [
           },
           {
             path: 'academic',
-            element: <AcademicStructurePage />,
-            handle: { title: 'Academic structure' } satisfies RouteHandle,
-          },
-          {
-            path: 'academic/programs',
-            element: <AcademicPage />,
-            handle: { title: 'Academic programs' } satisfies RouteHandle,
+            element: <Navigate to="/academic/sections" replace />,
           },
           {
             path: 'academic/academic-years',
             element: <AcademicYearsPage />,
             handle: { title: 'Academic years' } satisfies RouteHandle,
-          },
-          {
-            path: 'academic/majors',
-            element: <MajorsPage />,
-            handle: { title: 'Majors' } satisfies RouteHandle,
           },
           {
             path: 'academic/curriculum',
@@ -82,11 +67,6 @@ const routes: RouteObject[] = [
             path: 'academic/terms',
             element: <AcademicTermsPage />,
             handle: { title: 'Academic terms' } satisfies RouteHandle,
-          },
-          {
-            path: 'academic/year-levels',
-            element: <YearLevelsPage />,
-            handle: { title: 'Year levels' } satisfies RouteHandle,
           },
           {
             path: 'academic/sections',

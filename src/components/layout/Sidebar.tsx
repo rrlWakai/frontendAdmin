@@ -39,7 +39,7 @@ const navigation: NavigationGroup[] = [
   {
     label: 'Academic',
     items: [
-      { label: 'Academic structure', to: '/academic', icon: GraduationCap, end: true },
+      { label: 'Sections', to: '/academic/sections', icon: GraduationCap, end: true },
       { label: 'Academic terms', to: '/academic/terms', icon: CalendarDays },
       { label: 'Subjects', to: '/subjects', icon: BookOpen },
       { label: 'Curriculum', to: '/academic/curriculum', icon: BookOpen },
