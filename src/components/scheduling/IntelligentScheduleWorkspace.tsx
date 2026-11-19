@@ -391,6 +391,35 @@ export function IntelligentScheduleWorkspace({
         : `${assignmentReadiness.missing} unassigned · ${assignmentReadiness.multiple} with multiple distinct professors · ${assignmentReadiness.unavailable} that could not be verified. Exactly one distinct professor is required per ordinary class assignment.`
 
   const readinessIssues = readiness?.issues ?? []
+  const schedulerServiceStatus = readiness?.scheduler_service
+  const integrationChecks: ReadinessCheck[] = [
+    {
+      title: 'Scheduling engine liveness',
+      detail: readinessLoading
+        ? 'Checking the scheduling engine process…'
+        : schedulerServiceStatus?.live.ok
+          ? 'The deployed scheduling engine is reachable.'
+          : 'The deployed scheduling engine did not pass its liveness check.',
+      state: readinessLoading
+        ? 'checking'
+        : schedulerServiceStatus?.live.ok
+          ? 'ready'
+          : 'blocked',
+    },
+    {
+      title: 'Scheduling engine readiness',
+      detail: readinessLoading
+        ? 'Checking authenticated solver readiness…'
+        : schedulerServiceStatus?.ready.ok
+          ? 'The OR-Tools solver is ready to accept contract requests.'
+          : 'The solver is not ready or the shared service credentials were rejected.',
+      state: readinessLoading
+        ? 'checking'
+        : schedulerServiceStatus?.ready.ok
+          ? 'ready'
+          : 'blocked',
+    },
+  ]
   const readinessIssue = (code: string) => readinessIssues.find((issue) => issue.code === code)
   const timeGridIssue = readinessIssue('time_grid_not_configured')
   const meetingPlanIssue = readinessIssue('meeting_plans_not_configured')
@@ -648,6 +677,16 @@ export function IntelligentScheduleWorkspace({
   ) : undefined
 
   const categories: ReadinessCategory[] = [
+    {
+      id: 'integration',
+      title: 'Scheduling service',
+      summary: readinessLoading
+        ? 'Checking deployed scheduling engine health…'
+        : schedulerServiceStatus?.live.ok && schedulerServiceStatus.ready.ok
+          ? 'Deployed engine is live and ready.'
+          : 'The scheduling engine cannot accept generation requests.',
+      checks: integrationChecks,
+    },
     {
       id: 'academic',
       title: 'Academic configuration',

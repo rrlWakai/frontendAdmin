@@ -106,6 +106,12 @@ export interface SchedulingReadiness {
   issues: SchedulingReadinessIssue[]
   layers: Record<SchedulingReadinessLayer, SchedulingReadinessLayerSummary>
   capabilities: Record<string, boolean>
+  scheduler_service: {
+    configured: boolean
+    live: { ok: boolean; checked_at: string }
+    ready: { ok: boolean; checked_at: string }
+    checked_at: string
+  }
   inspected_at: string
 }
 
@@ -230,6 +236,7 @@ export interface SchedulePagination {
 }
 
 export type SchedulerSolverStatus = 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN'
+export type SchedulerResultStatus = 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN' | 'TIME_LIMIT'
 export type SchedulerValidationStatus = 'passed' | 'failed' | 'not_run'
 
 export interface SchedulerProfessorAssignment {
@@ -303,12 +310,29 @@ export interface SchedulerFullTimeDistribution {
   spread_minutes: number
 }
 
+export interface SchedulingGenerationRecord {
+  uuid: string
+  status: string
+  solver_status: string | null
+  result_status: string | null
+  completed_at: string | null
+}
+
+export interface SchedulingCandidateRecord {
+  uuid: string
+  version: number
+  status: string
+  validation_status: string
+  assignment_count: number
+}
+
 export interface SchedulingSolveResult {
   contract_version: string
   generation_id: string
   snapshot_sha256: string
   correlation_id: string
   solver_status: SchedulerSolverStatus
+  result_status: SchedulerResultStatus
   started_at: string
   completed_at: string
   solver_execution_ms: number
@@ -324,6 +348,8 @@ export interface SchedulingSolveResult {
   diagnostics: SchedulerDiagnostic[]
   workload_metrics: SchedulerWorkloadMetric[]
   warnings: SchedulerWarning[]
+  generation?: SchedulingGenerationRecord
+  candidate?: SchedulingCandidateRecord | null
 }
 
 export interface SchedulingSolveInput {
