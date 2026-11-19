@@ -152,5 +152,6 @@ export function assignmentLabels(assignment: SchedulerAssignment, options: Sched
       : `Section ${firstSectionId ?? 'unknown'}`,
     professor: professor?.name ?? `Professor ${assignment.professor_id}`,
     room: room ? `${room.code}${room.building ? ` · ${room.building}` : ''}` : assignment.room_id ?? 'No room assigned',
+    modality: assignment.modality.replaceAll('_', ' '),
   }
 }

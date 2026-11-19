@@ -41,7 +41,8 @@ function changeLabel(change: PlacementChange): string {
   return 'Unchanged'
 }
 
-function placementClasses(change: PlacementChange): string {
+function placementClasses(change: PlacementChange, hasIssue = false): string {
+  if (hasIssue) return 'border-red-300 bg-red-50 text-red-950'
   if (change === 'changed') return 'border-amber-300 bg-amber-50 text-amber-950'
   if (change === 'new') return 'border-emerald-300 bg-emerald-50 text-emerald-950'
   if (change === 'generated') return 'border-maroon-200 bg-maroon-50 text-maroon-950'
@@ -66,6 +67,10 @@ export function CandidateTimetableGrid({
   const selectedIssues = selected
     ? diagnosticsForAssignment(diagnostics, validationErrors, selected)
     : { diagnostics: [], errors: [] }
+  const hasAnyIssue = assignments.some((assignment) => {
+    const issues = diagnosticsForAssignment(diagnostics, validationErrors, assignment)
+    return issues.diagnostics.length > 0 || issues.errors.length > 0
+  })
 
   const starts = assignments.map((assignment) => timeToMinutes(assignment.start_time)).filter(Number.isFinite)
   const ends = assignments.map((assignment) => timeToMinutes(assignment.end_time)).filter(Number.isFinite)
@@ -89,16 +94,19 @@ export function CandidateTimetableGrid({
             Placements come from the persisted candidate revision. Select a meeting to inspect its details.
           </p>
         </div>
-        {parentAssignments ? (
-          <div className="flex flex-wrap gap-1.5">
-            <Badge tone="warning">Changed</Badge>
-            <Badge tone="success">New</Badge>
-            <Badge tone="danger">Removed</Badge>
-            <Badge tone="neutral">Unchanged</Badge>
-          </div>
-        ) : (
-          <Badge tone="info">Generated snapshot</Badge>
-        )}
+        <div className="flex flex-wrap gap-1.5">
+          {hasAnyIssue ? <Badge tone="danger">Issues</Badge> : null}
+          {parentAssignments ? (
+            <>
+              <Badge tone="warning">Changed</Badge>
+              <Badge tone="success">New</Badge>
+              <Badge tone="danger">Removed</Badge>
+              <Badge tone="neutral">Unchanged</Badge>
+            </>
+          ) : (
+            <Badge tone="info">Generated snapshot</Badge>
+          )}
+        </div>
       </CardHeader>
       <CardBody className="space-y-4">
         {assignments.length ? (
@@ -145,7 +153,7 @@ export function CandidateTimetableGrid({
                       const hasIssue = issues.diagnostics.length > 0 || issues.errors.length > 0
                       const labels = assignmentLabels(assignment, options)
                       const height = Math.max((end - start) * pixelsPerMinute - 4, 28)
-                      const ariaLabel = `${labels.subject}, ${labels.section}, ${formatTime(assignment.start_time)} to ${formatTime(assignment.end_time)}, ${labels.professor}, ${labels.room}, ${changeLabel(change)}`
+                      const ariaLabel = `${labels.subject}, ${labels.section}, ${formatTime(assignment.start_time)} to ${formatTime(assignment.end_time)}, ${labels.professor}, ${labels.room}, ${labels.modality}, ${changeLabel(change)}${hasIssue ? ', validation issue' : ''}`
 
                       return (
                         <button
@@ -156,14 +164,14 @@ export function CandidateTimetableGrid({
                           aria-pressed={selectedId === assignment.meeting_instance_id}
                           className={cn(
                             'absolute inset-x-1 z-10 overflow-hidden rounded-md border p-1.5 text-left text-[10px] leading-tight shadow-sm focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-maroon-700',
-                            placementClasses(change),
+                            placementClasses(change, hasIssue),
                             selectedId === assignment.meeting_instance_id && 'ring-2 ring-maroon-500 ring-offset-1',
                           )}
                           style={{ top: (start - startBoundary) * pixelsPerMinute + 2, height }}
                         >
                           <span className="block truncate font-bold">{labels.subject}</span>
                           <span className="block truncate">{formatTime(assignment.start_time)}–{formatTime(assignment.end_time)}</span>
-                          <span className="hidden truncate sm:block">{labels.room} · {labels.professor}</span>
+                          <span className="hidden truncate sm:block">{labels.modality} · {labels.room} · {labels.professor}</span>
                           {parentAssignments && change !== 'unchanged' ? (
                             <span className="mt-0.5 block truncate font-semibold">{changeLabel(change)}</span>
                           ) : null}

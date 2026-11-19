@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -26,6 +26,7 @@ import { durationBetween, formatDuration } from '@/components/scheduling/candida
 import {
   fetchOfferingFacultyAssignments,
   fetchSchedulingCandidate,
+  fetchSchedulingCandidateRevision,
   fetchSchedulingGenerationHistory,
   fetchSchedulingReadiness,
   fetchSchedules,
@@ -37,6 +38,7 @@ import type {
   ScheduleConflictRecord,
   ScheduleRecord,
   SchedulingCandidateDetail,
+  SchedulingCandidateRevisionDetail,
   SchedulingGenerationHistoryRecord,
   SchedulingOptions,
   SchedulingReadiness,
@@ -48,6 +50,25 @@ import { cn } from '@/utils/cn'
 type WorkspaceStage = 'readiness' | 'generation' | 'review' | 'revision'
 type ReadinessState = 'ready' | 'warning' | 'blocked' | 'checking' | 'info'
 type BadgeTone = 'neutral' | 'success' | 'warning' | 'info' | 'danger'
+
+interface SolveFailureDetail {
+  code: string | null
+  generationUuid: string | null
+  resultStatus: string | null
+  solverStatus: string | null
+  failureCode: string | null
+  failureMessage: string | null
+  candidateCount: number | null
+  diagnostics: string[]
+}
+
+interface PersistedWorkspaceSelection {
+  termId: number
+  stage: WorkspaceStage
+  historyPage: number
+  latestRun: SchedulingSolveResponse | null
+  selectedHistory: SchedulingGenerationHistoryRecord | null
+}
 
 interface AssignmentReadiness {
   checkedSignature: string
@@ -159,11 +180,114 @@ function stateLabel(state: ReadinessState): string {
   return 'Info'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function normalizedStatusCode(value: string | null | undefined): string | null {
+  return value ? value.toUpperCase() : null
+}
+
+function statusLabel(value: string | null | undefined): string {
+  return normalizedStatusCode(value) ?? 'Not recorded'
+}
+
+function workspaceSelectionKey(termId: number): string {
+  return `ccsync.scheduling.workspace.${termId}`
+}
+
+function isGenerationHistoryRecord(value: unknown): value is SchedulingGenerationHistoryRecord {
+  return isRecord(value)
+    && typeof value.uuid === 'string'
+    && isRecord(value.diagnostics)
+    && Array.isArray(value.diagnostics.codes)
+    && (value.diagnostics.frozen_source === null || isRecord(value.diagnostics.frozen_source))
+}
+
+function isSolveResponse(value: unknown): value is SchedulingSolveResponse {
+  return isRecord(value)
+    && isRecord(value.generation)
+    && isRecord(value.result)
+    && Array.isArray(value.result.assignments)
+    && isRecord(value.result.validation_summary)
+    && Array.isArray(value.result.diagnostics)
+}
+
+function readWorkspaceSelection(termId: number): PersistedWorkspaceSelection | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(workspaceSelectionKey(termId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PersistedWorkspaceSelection
+    if (parsed.termId !== termId || !['readiness', 'generation', 'review', 'revision'].includes(parsed.stage)) return null
+    if (!Number.isInteger(parsed.historyPage) || parsed.historyPage < 1) return null
+    if (parsed.latestRun !== null && !isSolveResponse(parsed.latestRun)) return null
+    if (parsed.selectedHistory !== null && !isGenerationHistoryRecord(parsed.selectedHistory)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function saveWorkspaceSelection(selection: PersistedWorkspaceSelection): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(workspaceSelectionKey(selection.termId), JSON.stringify(selection))
+  } catch {
+    return
+  }
+}
+
+function solveFailureDetail(error: unknown): SolveFailureDetail | null {
+  const response = (error as { response?: { data?: unknown } }).response
+  const payload = isRecord(response?.data) ? response.data : null
+  if (!payload) return null
+
+  const data = isRecord(payload.data) ? payload.data : null
+  const errors = isRecord(payload.errors) ? payload.errors : null
+  const generation = isRecord(data?.generation)
+    ? data.generation
+    : isRecord(errors?.generation)
+      ? errors.generation
+      : null
+  const result = isRecord(data?.result) ? data.result : null
+  const candidate = isRecord(data?.candidate) ? data.candidate : null
+  if (!generation && !result) return null
+
+  const diagnostics = isRecord(generation?.diagnostics) ? generation.diagnostics : null
+  const candidateCount = readNumber(generation?.candidate_count)
+    ?? (candidate ? 1 : null)
+    ?? (Array.isArray(result?.assignments) ? result.assignments.length : null)
+
+  return {
+    code: readString(payload.code),
+    generationUuid: readString(generation?.uuid),
+    resultStatus: normalizedStatusCode(readString(generation?.result_status) ?? readString(result?.result_status)),
+    solverStatus: normalizedStatusCode(readString(generation?.solver_status) ?? readString(result?.solver_status)),
+    failureCode: readString(generation?.failure_code) ?? readString(payload.code),
+    failureMessage: readString(generation?.failure_message) ?? readString(payload.message),
+    candidateCount,
+    diagnostics: readStringArray(diagnostics?.codes),
+  }
+}
+
 function categoryState(checks: ReadinessCheck[]): ReadinessState {
   if (checks.some((check) => check.state === 'checking')) return 'checking'
   if (checks.some((check) => check.state === 'blocked')) return 'blocked'
   if (checks.some((check) => check.state === 'warning')) return 'warning'
-  if (checks.every((check) => check.state === 'ready' || check.state === 'info')) return 'ready'
+  if (checks.some((check) => check.state === 'ready')) return 'ready'
   return 'info'
 }
 
@@ -191,14 +315,15 @@ function generationOutcomeMessage(run: SchedulingSolveResponse | null): string |
   const detail = run.generation.failure_message
   const code = run.generation.failure_code
   const suffix = [code, detail].filter(Boolean).join(' · ')
+  const resultStatus = normalizedStatusCode(run.generation.result_status)
 
-  if (run.generation.result_status === 'INFEASIBLE') {
+  if (resultStatus === 'INFEASIBLE') {
     return `The solver reported infeasibility and no candidate was persisted.${suffix ? ` ${suffix}` : ''}`
   }
-  if (run.generation.result_status === 'TIME_LIMIT') {
+  if (resultStatus === 'TIME_LIMIT') {
     return `The solver stopped at its time limit without a complete candidate.${suffix ? ` ${suffix}` : ''}`
   }
-  if (run.generation.result_status === 'UNKNOWN' || run.result.result_status === 'UNKNOWN') {
+  if (resultStatus === 'UNKNOWN' || normalizedStatusCode(run.result.result_status) === 'UNKNOWN') {
     return `The solver could not establish a result and no candidate was persisted.${suffix ? ` ${suffix}` : ''}`
   }
 
@@ -221,7 +346,10 @@ export function IntelligentScheduleWorkspace({
   conflicts,
   onDirtyChange,
 }: IntelligentScheduleWorkspaceProps) {
-  const [stage, setStage] = useState<WorkspaceStage>('readiness')
+  const persistedSelection = termId ? readWorkspaceSelection(termId) : null
+  const hasRestoredSelection = Boolean(persistedSelection?.latestRun || persistedSelection?.selectedHistory)
+  const restoredStage: WorkspaceStage = hasRestoredSelection ? persistedSelection!.stage : 'readiness'
+  const [stage, setStage] = useState<WorkspaceStage>(restoredStage)
   const [inventory, setInventory] = useState<ScheduleRecord[] | null>(null)
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
@@ -240,7 +368,8 @@ export function IntelligentScheduleWorkspace({
   const [keepRoom, setKeepRoom] = useState(true)
   const [solving, setSolving] = useState(false)
   const [solveError, setSolveError] = useState<string | null>(null)
-  const [latestRun, setLatestRun] = useState<SchedulingSolveResponse | null>(null)
+  const [solveFailure, setSolveFailure] = useState<SolveFailureDetail | null>(null)
+  const [latestRun, setLatestRun] = useState<SchedulingSolveResponse | null>(persistedSelection?.latestRun ?? null)
   const [candidateDetail, setCandidateDetail] = useState<SchedulingCandidateDetail | null>(null)
   const [candidateLoading, setCandidateLoading] = useState(false)
   const [candidateError, setCandidateError] = useState<string | null>(null)
@@ -252,28 +381,38 @@ export function IntelligentScheduleWorkspace({
     per_page: 10,
     total: 0,
   })
-  const [historyPage, setHistoryPage] = useState(1)
+  const [historyPage, setHistoryPage] = useState(persistedSelection?.historyPage ?? 1)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
-  const [selectedHistory, setSelectedHistory] = useState<SchedulingGenerationHistoryRecord | null>(null)
+  const [selectedHistory, setSelectedHistory] = useState<SchedulingGenerationHistoryRecord | null>(
+    persistedSelection?.selectedHistory ?? null,
+  )
   const [showConfiguration, setShowConfiguration] = useState(false)
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false)
   const [resetTermId, setResetTermId] = useState(termId)
+  const candidateRequestRef = useRef(0)
+  const assignmentRequestRef = useRef(0)
+  const generationRequestRef = useRef(0)
   if (resetTermId !== termId) {
+    const nextSelection = termId ? readWorkspaceSelection(termId) : null
+    candidateRequestRef.current += 1
+    assignmentRequestRef.current += 1
+    generationRequestRef.current += 1
     setResetTermId(termId)
-    setLatestRun(null)
+    setLatestRun(nextSelection?.latestRun ?? null)
     setCandidateDetail(null)
     setCandidateError(null)
     setGenerationNotice(null)
     setGenerationHistory([])
-    setHistoryPage(1)
+    setHistoryPage(nextSelection?.historyPage ?? 1)
     setHistoryError(null)
-    setSelectedHistory(null)
+    setSelectedHistory(nextSelection?.selectedHistory ?? null)
     setSolveError(null)
+    setSolveFailure(null)
     setInventory(null)
     setReadiness(null)
-    setStage('readiness')
+    setStage(nextSelection && (nextSelection.latestRun || nextSelection.selectedHistory) ? nextSelection.stage : 'readiness')
     setShowConfiguration(false)
     setHasUnsavedEdits(false)
   }
@@ -305,20 +444,41 @@ export function IntelligentScheduleWorkspace({
   }, [termId, onDirtyChange])
 
   const loadCandidate = useCallback(async (candidateUuid: string) => {
+    const requestId = candidateRequestRef.current + 1
+    candidateRequestRef.current = requestId
     setCandidateLoading(true)
     setCandidateError(null)
     try {
       const detail = await fetchSchedulingCandidate(candidateUuid)
+      if (requestId !== candidateRequestRef.current) return null
       setCandidateDetail(detail)
       return detail
     } catch (failure) {
+      if (requestId !== candidateRequestRef.current) return null
       setCandidateDetail(null)
       setCandidateError(getApiErrorMessage(failure, 'Unable to load the persisted scheduling candidate.'))
       return null
     } finally {
-      setCandidateLoading(false)
+      if (requestId === candidateRequestRef.current) setCandidateLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    const restoredCandidateUuid = selectedHistory?.candidate?.uuid ?? latestRun?.candidate?.uuid
+    if (!restoredCandidateUuid || candidateDetail) return
+    void loadCandidate(restoredCandidateUuid)
+  }, [candidateDetail, latestRun, loadCandidate, selectedHistory])
+
+  useEffect(() => {
+    if (!termId) return
+    saveWorkspaceSelection({
+      termId,
+      stage,
+      historyPage,
+      latestRun,
+      selectedHistory,
+    })
+  }, [historyPage, latestRun, selectedHistory, stage, termId])
 
   useEffect(() => {
     if (!termId) return
@@ -421,6 +581,10 @@ export function IntelligentScheduleWorkspace({
   const checkAssignments = useCallback(async () => {
     if (!options?.offerings.length) return
 
+    const requestId = assignmentRequestRef.current + 1
+    assignmentRequestRef.current = requestId
+    const isCurrent = () => requestId === assignmentRequestRef.current
+
     setAssignmentLoading(true)
     setAssignmentError(null)
     setCheckedOfferingCount(0)
@@ -438,6 +602,7 @@ export function IntelligentScheduleWorkspace({
       const results = await Promise.allSettled(
         batch.map((offering) => fetchOfferingFacultyAssignments(offering.id)),
       )
+      if (!isCurrent()) return
 
       results.forEach((result, index) => {
         const offering = batch[index]
@@ -458,8 +623,10 @@ export function IntelligentScheduleWorkspace({
       })
 
       completed += batch.length
-      setCheckedOfferingCount(completed)
+      if (isCurrent()) setCheckedOfferingCount(completed)
     }
+
+    if (!isCurrent()) return
 
     const summary = assignmentSummary(options.offerings, records)
     const professorIds = [...new Set([...records.values()].flatMap((item) => item.professorIds))]
@@ -474,6 +641,7 @@ export function IntelligentScheduleWorkspace({
     for (let offset = 0; offset < professorIds.length; offset += batchSize) {
       const batch = professorIds.slice(offset, offset + batchSize)
       const results = await Promise.allSettled(batch.map((id) => fetchProfessor(id)))
+      if (!isCurrent()) return
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           profileFailures += 1
@@ -502,6 +670,8 @@ export function IntelligentScheduleWorkspace({
         })
       })
     }
+
+    if (!isCurrent()) return
 
     setAssignmentReadiness({
       checkedSignature: offeringSignature,
@@ -738,17 +908,25 @@ export function IntelligentScheduleWorkspace({
     },
     {
       title: 'Full-time workday policy and exceptions',
-      state: readinessLoading ? 'checking' : fullTimePolicyIssue ? 'blocked' : 'ready',
+      state: readinessLoading ? 'checking' : readinessError || !readiness ? 'blocked' : fullTimePolicyIssue ? 'blocked' : 'ready',
       detail: readinessLoading
         ? 'Checking the full-time workday policy…'
-        : fullTimePolicyIssue?.message ?? 'The term-scoped full-time workday policy and authorized exceptions are available.',
+        : readinessError
+          ? readinessError
+          : !readiness
+            ? 'Full-time workday policy could not be checked.'
+            : fullTimePolicyIssue?.message ?? 'The term-scoped full-time workday policy and authorized exceptions are available.',
     },
     {
       title: 'Part-time workload targets',
-      state: readinessLoading ? 'checking' : partTimeTargetIssue ? 'blocked' : 'info',
+      state: readinessLoading ? 'checking' : readinessError || !readiness ? 'blocked' : partTimeTargetIssue ? 'blocked' : 'info',
       detail: readinessLoading
         ? 'Checking part-time workload targets…'
-        : partTimeTargetIssue?.message ?? 'Weekly targets use actual teaching hours and remain soft objectives. A target deviation is never a hard scheduling failure.',
+        : readinessError
+          ? readinessError
+          : !readiness
+            ? 'Part-time workload targets could not be checked.'
+            : partTimeTargetIssue?.message ?? 'Weekly targets use actual teaching hours and remain soft objectives. A target deviation is never a hard scheduling failure.',
       link: { to: '/faculty', label: 'Review faculty records' },
     },
   ]
@@ -776,8 +954,14 @@ export function IntelligentScheduleWorkspace({
     },
     {
       title: 'Explicit combined-class groups',
-      state: readinessLoading ? 'checking' : combinedClassesIssue ? 'info' : 'ready',
-      detail: combinedClassesIssue?.message ?? 'Explicit combined-class groups are available.',
+      state: readinessLoading ? 'checking' : readinessError || !readiness ? 'blocked' : combinedClassesIssue ? 'info' : 'ready',
+      detail: readinessLoading
+        ? 'Checking combined-class configuration…'
+        : readinessError
+          ? readinessError
+          : !readiness
+            ? 'Combined-class configuration could not be checked.'
+            : combinedClassesIssue?.message ?? 'Explicit combined-class groups are available.',
     },
   ]
 
@@ -809,10 +993,16 @@ export function IntelligentScheduleWorkspace({
     },
     {
       title: 'Open schedule conflicts',
-      state: activeConflicts.length ? 'warning' : 'ready',
-      detail: activeConflicts.length
-        ? `${activeConflicts.length} open conflict${activeConflicts.length === 1 ? '' : 's'} exist in the current manual timetable. They do not describe a new candidate.`
-        : 'No open conflicts are recorded for the current timetable.',
+      state: inventoryLoading ? 'checking' : inventoryError || !inventory ? 'blocked' : activeConflicts.length ? 'warning' : 'ready',
+      detail: inventoryLoading
+        ? 'Loading the current timetable conflict inventory…'
+        : inventoryError
+          ? inventoryError
+          : !inventory
+            ? 'The current timetable conflict inventory is unavailable.'
+            : activeConflicts.length
+              ? `${activeConflicts.length} open conflict${activeConflicts.length === 1 ? '' : 's'} exist in the current manual timetable. They do not describe a new candidate.`
+              : 'No open conflicts are recorded for the current timetable.',
     },
   ]
 
@@ -907,9 +1097,10 @@ export function IntelligentScheduleWorkspace({
   const allChecks = categories.flatMap((category) => category.checks)
   const blockingCount = allChecks.filter((check) => check.state === 'blocked').length
   const warningCount = allChecks.filter((check) => check.state === 'warning').length
+  const hasLoadError = Boolean(loadError || readinessError || inventoryError || assignmentError)
   const readinessState: ReadinessState = optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
     ? 'checking'
-    : blockingCount
+    : hasLoadError || blockingCount
       ? 'blocked'
       : warningCount
         ? 'warning'
@@ -922,30 +1113,39 @@ export function IntelligentScheduleWorkspace({
       ? 'Requesting a complete-semester candidate from the scheduling service…'
       : optionsLoading || inventoryLoading || assignmentLoading || readinessLoading
         ? 'Waiting for scheduling inputs to finish loading.'
-        : !readiness
-          ? 'Scheduling readiness is unavailable, so generation cannot start.'
-          : !readiness.integration_ready
+        : hasLoadError
+          ? 'One or more scheduling inputs could not be verified. Refresh inputs or resolve the error before generating.'
+          : !readiness
+            ? 'Scheduling readiness is unavailable, so generation cannot start.'
+            : !readiness.integration_ready
             ? 'The scheduling service is not connected. Configure the scheduler URL and API key before generating.'
             : !readiness.generation_data_ready
               ? 'Scheduling inputs are incomplete. Resolve the blocking readiness issues before generating.'
               : blockingCount
                 ? `${blockingCount} blocking requirement${blockingCount === 1 ? '' : 's'} must be resolved before generation.`
                 : 'All readiness checks passed.'
-  const generationReady = Boolean(term) && !solving && !blockingCount && generationAvailable
+  const generationReady = Boolean(term) && !solving && !hasLoadError && !blockingCount && generationAvailable
 
   const handleGenerate = useCallback(async () => {
     if (!termId || !generationReady) return
 
+    const requestId = generationRequestRef.current + 1
+    generationRequestRef.current = requestId
+    const isCurrent = () => requestId === generationRequestRef.current
+
     setSolving(true)
     setSolveError(null)
+    setSolveFailure(null)
     setGenerationNotice(null)
     setSelectedHistory(null)
 
     try {
       const run = await solveScheduling({ academic_term_id: termId })
+      if (!isCurrent()) return
       setLatestRun(run)
       if (run.candidate?.uuid) {
         await loadCandidate(run.candidate.uuid)
+        if (!isCurrent()) return
         setStage('review')
       } else {
         setCandidateDetail(null)
@@ -953,10 +1153,14 @@ export function IntelligentScheduleWorkspace({
         setStage('generation')
       }
     } catch (failure) {
+      if (!isCurrent()) return
       setSolveError(solveFailureMessage(failure))
+      setSolveFailure(solveFailureDetail(failure))
     } finally {
-      setSolving(false)
-      setHistoryVersion((value) => value + 1)
+      if (isCurrent()) {
+        setSolving(false)
+        setHistoryVersion((value) => value + 1)
+      }
     }
   }, [generationReady, loadCandidate, termId])
 
@@ -984,7 +1188,9 @@ export function IntelligentScheduleWorkspace({
     readiness: stateLabel(readinessState),
     generation: solving
       ? 'Running'
-      : latestRun?.generation.result_status ?? latestRun?.generation.status ?? 'Not generated',
+      : statusLabel(latestRun?.generation.result_status ?? latestRun?.generation.status) === 'Not recorded'
+        ? 'Not generated'
+        : statusLabel(latestRun?.generation.result_status ?? latestRun?.generation.status),
     review: candidateDetail
       ? `${candidateDetail.candidate.assignment_count} placements`
       : latestRun?.candidate
@@ -1065,6 +1271,7 @@ export function IntelligentScheduleWorkspace({
           onGenerate={() => void handleGenerate()}
           isGenerating={solving}
           solveError={solveError}
+          solveFailure={solveFailure}
           latestRun={latestRun}
           generationNotice={generationNotice}
           history={generationHistory}
@@ -1085,6 +1292,7 @@ export function IntelligentScheduleWorkspace({
             candidateDetail={candidateDetail}
             candidateLoading={candidateLoading}
             candidateError={candidateError}
+            options={options}
             onGoToGeneration={() => {
               setSelectedHistory(null)
               requestStageChange('generation')
@@ -1508,6 +1716,7 @@ function GenerationStage({
   onGenerate,
   isGenerating,
   solveError,
+  solveFailure,
   latestRun,
   generationNotice,
   history,
@@ -1538,6 +1747,7 @@ function GenerationStage({
   onGenerate: () => void
   isGenerating: boolean
   solveError: string | null
+  solveFailure: SolveFailureDetail | null
   latestRun: SchedulingSolveResponse | null
   generationNotice: string | null
   history: SchedulingGenerationHistoryRecord[]
@@ -1600,7 +1810,7 @@ function GenerationStage({
             {latestRun ? (
               <dl>
                 <DefinitionRow label="Generation" value={latestRun.generation.uuid} detail={`Status: ${latestRun.generation.status}`} />
-                <DefinitionRow label="Solver outcome" value={`${latestRun.result.solver_status} · ${latestRun.result.result_status}`} />
+                <DefinitionRow label="Solver outcome" value={`${statusLabel(latestRun.result.solver_status)} · ${statusLabel(latestRun.result.result_status)}`} />
                 <DefinitionRow label="Execution duration" value={`${latestRun.result.solver_execution_ms} ms`} detail={`Completed: ${latestRun.result.completed_at}`} />
                 <DefinitionRow
                   label="Validation"
@@ -1621,6 +1831,24 @@ function GenerationStage({
             )}
           </CardBody>
         </Card>
+
+        {solveFailure ? (
+          <Card>
+            <CardHeader className="py-4">
+              <h2 className="text-sm font-semibold text-ink">Generation attempt outcome</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">Structured outcome returned with the failed generation request.</p>
+            </CardHeader>
+            <CardBody>
+              <dl>
+                <DefinitionRow label="Generation" value={solveFailure.generationUuid ?? 'Not recorded'} detail={solveFailure.code ? `Code: ${solveFailure.code}` : undefined} />
+                <DefinitionRow label="Solver outcome" value={`${statusLabel(solveFailure.solverStatus)} · ${statusLabel(solveFailure.resultStatus)}`} />
+                <DefinitionRow label="Failure" value={solveFailure.failureCode ?? 'Not coded'} detail={solveFailure.failureMessage ?? undefined} />
+                <DefinitionRow label="Persisted candidates" value={solveFailure.candidateCount === null ? 'Not recorded' : `${solveFailure.candidateCount}`} />
+                {solveFailure.diagnostics.length ? <DefinitionRow label="Diagnostics" value={solveFailure.diagnostics.join(', ')} /> : null}
+              </dl>
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader className="flex flex-wrap items-center justify-between gap-2 py-4">
@@ -1678,7 +1906,7 @@ function GenerationStage({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-mono text-xs font-semibold text-ink">{shortenIdentifier(generation.uuid)}</p>
-                  <Badge tone={generationTone(generation)}>{generation.result_status ?? generation.status}</Badge>
+                  <Badge tone={generationTone(generation)}>{statusLabel(generation.result_status ?? generation.status)}</Badge>
                 </div>
                 <dl className="mt-2 grid gap-1 text-[11px] leading-4 text-ink-muted sm:grid-cols-2">
                   <div><dt className="inline font-semibold">Requested:</dt> <dd className="inline">{formatHistoryTimestamp(generation.requested_at)}</dd></div>
@@ -1927,6 +2155,7 @@ function HistoricalGenerationReview({
   candidateDetail,
   candidateLoading,
   candidateError,
+  options,
   onGoToGeneration,
   onGoToRevision,
 }: {
@@ -1934,9 +2163,47 @@ function HistoricalGenerationReview({
   candidateDetail: SchedulingCandidateDetail | null
   candidateLoading: boolean
   candidateError: string | null
+  options: SchedulingOptions | null
   onGoToGeneration: () => void
   onGoToRevision: () => void
 }) {
+  const historicalRevision = candidateDetail?.revisions
+    .filter((revision) => ['draft', 'under_review', 'validated', 'needs_revision'].includes(revision.status))
+    .sort((left, right) => right.revision_number - left.revision_number)[0]
+    ?? candidateDetail?.revisions[0]
+    ?? null
+  const [revisionDetail, setRevisionDetail] = useState<SchedulingCandidateRevisionDetail | null>(null)
+  const [revisionLoading, setRevisionLoading] = useState(false)
+  const [revisionError, setRevisionError] = useState<string | null>(null)
+  const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!historicalRevision) {
+      setRevisionDetail(null)
+      setRevisionError(null)
+      setRevisionLoading(false)
+      return
+    }
+    let active = true
+    setRevisionLoading(true)
+    setRevisionError(null)
+    setRevisionDetail(null)
+    void (async () => {
+      try {
+        const detail = await fetchSchedulingCandidateRevision(historicalRevision.uuid)
+        if (!active) return
+        setRevisionDetail(detail)
+        setSelectedPlacementId(detail.content.assignments[0]?.meeting_instance_id ?? null)
+      } catch (failure) {
+        if (!active) return
+        setRevisionError(getApiErrorMessage(failure, 'Unable to load this generation’s candidate timetable.'))
+      } finally {
+        if (active) setRevisionLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [historicalRevision?.uuid])
+
   return (
     <div className="space-y-5">
       <Card>
@@ -1945,12 +2212,12 @@ function HistoricalGenerationReview({
             <h2 className="text-sm font-semibold text-ink">Historical generation</h2>
             <p className="mt-0.5 text-xs text-ink-muted">This review is loaded from the selected persisted generation.</p>
           </div>
-          <Badge tone={generationTone(generation)}>{generation.result_status ?? generation.status}</Badge>
+          <Badge tone={generationTone(generation)}>{statusLabel(generation.result_status ?? generation.status)}</Badge>
         </CardHeader>
         <CardBody>
           <dl>
             <DefinitionRow label="Generation" value={shortenIdentifier(generation.uuid)} detail={`Status: ${generation.status}`} />
-            <DefinitionRow label="Solver outcome" value={`${generation.solver_status ?? 'Not recorded'} · ${generation.result_status ?? 'Not recorded'}`} />
+            <DefinitionRow label="Solver outcome" value={`${statusLabel(generation.solver_status)} · ${statusLabel(generation.result_status)}`} />
             <DefinitionRow
               label="Timeline"
               value={`Requested ${formatHistoryTimestamp(generation.requested_at)}`}
@@ -2025,6 +2292,57 @@ function HistoricalGenerationReview({
             </CardBody>
           </Card>
 
+          {historicalRevision ? (
+            revisionLoading ? (
+              <Card>
+                <p role="status" className="flex items-center gap-2 px-5 py-4 text-xs text-ink-muted">
+                  <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                  Loading this generation’s candidate timetable…
+                </p>
+              </Card>
+            ) : revisionError ? (
+              <Card>
+                <p role="alert" className="m-5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">
+                  {revisionError}
+                </p>
+              </Card>
+            ) : revisionDetail ? (
+              <>
+                <CandidateTimetableGrid
+                  assignments={revisionDetail.content.assignments}
+                  parentAssignments={null}
+                  options={options}
+                  diagnostics={[]}
+                  validationErrors={revisionDetail.content.validation_summary.validation_errors}
+                  selectedId={selectedPlacementId}
+                  onSelect={setSelectedPlacementId}
+                />
+                <Card>
+                  <CardHeader className="py-4">
+                    <h2 className="text-sm font-semibold text-ink">Candidate validation diagnostics</h2>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      Validation recorded for revision #{revisionDetail.revision.revision_number} of this generation’s candidate.
+                    </p>
+                  </CardHeader>
+                  <CardBody>
+                    <dl>
+                      <DefinitionRow label="Validation status" value={revisionDetail.content.validation_summary.independent_validation_status} />
+                      <DefinitionRow label="Scheduled meetings" value={`${revisionDetail.content.validation_summary.scheduled_meeting_count}`} />
+                      <DefinitionRow label="Offerings represented" value={`${revisionDetail.content.validation_summary.represented_offering_count} of ${revisionDetail.content.validation_summary.required_offering_count}`} />
+                    </dl>
+                    {revisionDetail.content.validation_summary.validation_errors.length ? (
+                      <ul className="mt-3 space-y-1 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+                        {revisionDetail.content.validation_summary.validation_errors.map((error) => <li key={error}>{error}</li>)}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-xs text-ink-muted">No validation errors are recorded for this revision.</p>
+                    )}
+                  </CardBody>
+                </Card>
+              </>
+            ) : null
+          ) : null}
+
           <Card>
             <CardHeader className="py-4">
               <h2 className="text-sm font-semibold text-ink">Revision history</h2>
@@ -2085,6 +2403,8 @@ function ReviewStage({
   onGoToGeneration: () => void
   onGoToRevision: () => void
 }) {
+  const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null)
+
   if (!run?.candidate) {
     return (
       <Card>
@@ -2111,7 +2431,10 @@ function ReviewStage({
 
   const result = run.result
   const summary = result.validation_summary
-  const tone: BadgeTone = summary.complete_candidate && summary.independent_validation_status === 'passed' && run.generation.result_status === 'FEASIBLE'
+  const resolvedSelectedId = selectedPlacementId && result.assignments.some((assignment) => assignment.meeting_instance_id === selectedPlacementId)
+    ? selectedPlacementId
+    : result.assignments[0]?.meeting_instance_id ?? null
+  const tone: BadgeTone = summary.complete_candidate && summary.independent_validation_status === 'passed' && normalizedStatusCode(run.generation.result_status) === 'FEASIBLE'
     ? 'success'
     : 'warning'
   const roomUsage = new Map<string, { room: string; minutes: number; placements: number }>()
@@ -2135,13 +2458,13 @@ function ReviewStage({
               Original solver output persisted for this generation. Review revisions are separate and do not overwrite it.
             </p>
           </div>
-          <Badge tone={tone}>{run.generation.result_status ?? result.result_status}</Badge>
+          <Badge tone={tone}>{statusLabel(run.generation.result_status ?? result.result_status)}</Badge>
         </CardHeader>
         <CardBody>
           <dl>
             <DefinitionRow label="Candidate" value={run.candidate.uuid} detail={`Version ${run.candidate.version} · ${run.candidate.assignment_count} placements`} />
             <DefinitionRow label="Generation" value={run.generation.uuid} detail={`${run.generation.status} · completed ${run.generation.completed_at ?? 'not recorded'}`} />
-            <DefinitionRow label="Solver outcome" value={`${result.solver_status} · ${result.result_status}`} detail={`Execution ${result.solver_execution_ms} ms`} />
+            <DefinitionRow label="Solver outcome" value={`${statusLabel(result.solver_status)} · ${statusLabel(result.result_status)}`} detail={`Execution ${result.solver_execution_ms} ms`} />
             <DefinitionRow
               label="Scheduled meetings"
               value={`${summary.scheduled_meeting_count} of ${summary.required_mandatory_meeting_count} required`}
@@ -2172,8 +2495,8 @@ function ReviewStage({
         options={options}
         diagnostics={result.diagnostics}
         validationErrors={summary.validation_errors}
-        selectedId={null}
-        onSelect={() => undefined}
+        selectedId={resolvedSelectedId}
+        onSelect={setSelectedPlacementId}
       />
 
       <Card>
@@ -2269,9 +2592,10 @@ function shortenIdentifier(value: string): string {
 }
 
 function generationTone(generation: SchedulingGenerationHistoryRecord): BadgeTone {
-  if (generation.status === 'failed' || generation.result_status === 'INFEASIBLE') return 'danger'
+  const resultStatus = normalizedStatusCode(generation.result_status)
+  if (generation.status === 'failed' || resultStatus === 'INFEASIBLE') return 'danger'
   if (generation.status === 'running' || generation.status === 'queued') return 'info'
-  if (generation.result_status === 'FEASIBLE') return 'success'
+  if (resultStatus === 'FEASIBLE') return 'success'
   return 'warning'
 }
 

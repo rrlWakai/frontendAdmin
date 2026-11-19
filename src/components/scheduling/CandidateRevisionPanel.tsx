@@ -46,6 +46,28 @@ function isRevisionStaleError(error: unknown): boolean {
   return response?.status === 409 || response?.data?.code === 'stale_candidate_revision'
 }
 
+function revisionSelectionKeyName(candidateUuid: string): string {
+  return `ccsync.scheduling.revision.${candidateUuid}`
+}
+
+function readRevisionSelection(candidateUuid: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage.getItem(revisionSelectionKeyName(candidateUuid))
+  } catch {
+    return null
+  }
+}
+
+function saveRevisionSelection(candidateUuid: string, revisionUuid: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(revisionSelectionKeyName(candidateUuid), revisionUuid)
+  } catch {
+    return
+  }
+}
+
 function activeRevision(revisions: SchedulingCandidateRevisionSummary[]): SchedulingCandidateRevisionSummary | null {
   return revisions
     .filter((revision) => ACTIVE_STATUSES.includes(revision.status))
@@ -80,7 +102,9 @@ export function CandidateRevisionPanel({
   const currentSelectionKey = revisionSelectionKey(candidate.revisions)
   const [selectionSourceKey, setSelectionSourceKey] = useState(currentSelectionKey)
   const [selectedUuid, setSelectedUuid] = useState<string | null>(
-    () => (activeRevision(candidate.revisions) ?? candidate.revisions[0])?.uuid ?? null,
+    () => readRevisionSelection(candidate.candidate.uuid)
+      ?? (activeRevision(candidate.revisions) ?? candidate.revisions[0])?.uuid
+      ?? null,
   )
   if (currentSelectionKey !== selectionSourceKey) {
     setSelectionSourceKey(currentSelectionKey)
@@ -102,7 +126,9 @@ export function CandidateRevisionPanel({
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [showConflictReload, setShowConflictReload] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [validationErrorRevisionUuid, setValidationErrorRevisionUuid] = useState<string | null>(null)
 
   const loadKey = `${selectedUuid ?? ''}:${reloadVersion}`
   const [loadedKey, setLoadedKey] = useState('')
@@ -126,7 +152,6 @@ export function CandidateRevisionPanel({
         setDraftAssignments(result.content.assignments)
         setChangeSummary('')
         setActionReason('')
-        setValidationErrors([])
         setSelectedMeetingId(result.content.assignments[0]?.meeting_instance_id ?? null)
 
         const parent = result.revision.parent_revision_id === null
@@ -155,6 +180,11 @@ export function CandidateRevisionPanel({
     return () => { current = false }
   }, [candidate.revisions, reloadVersion, selectedUuid])
 
+  useEffect(() => {
+    if (selectedUuid) saveRevisionSelection(candidate.candidate.uuid, selectedUuid)
+  }, [candidate.candidate.uuid, selectedUuid])
+
+  const visibleValidationErrors = validationErrorRevisionUuid === selectedUuid ? validationErrors : []
   const originalAssignments = detail?.content.assignments ?? []
   const dirty = Boolean(changeSummary.trim())
     || JSON.stringify(draftAssignments) !== JSON.stringify(originalAssignments)
@@ -183,11 +213,25 @@ export function CandidateRevisionPanel({
 
   const issueError = useCallback((error: unknown, fallback: string) => {
     if (isRevisionStaleError(error)) {
-      setActionError(`This revision changed in another session. Your edits are preserved. Reload the latest revision before retrying. ${getApiErrorMessage(error, fallback)}`)
+      setShowConflictReload(true)
+      setActionError(`This revision changed in another session. Copy any edits you need, then reload the latest revision before retrying. ${getApiErrorMessage(error, fallback)}`)
       return
     }
+    setShowConflictReload(false)
     setActionError(getApiErrorMessage(error, fallback))
   }, [])
+
+  async function handleReloadLatestRevision() {
+    if (dirty && !window.confirm('Reload the latest revision? Unsaved edits in this revision will be discarded.')) return
+    setSelectedUuid(null)
+    setShowConflictReload(false)
+    setActionError(null)
+    setActionNotice(null)
+    setValidationErrorRevisionUuid(null)
+    setValidationErrors([])
+    setReloadVersion((value) => value + 1)
+    await onCandidateChanged()
+  }
 
   function handlePlacementChange(meetingInstanceId: string, field: PlacementEditField, value: string) {
     setDraftAssignments((current) => current.map((assignment) => (
@@ -262,11 +306,11 @@ export function CandidateRevisionPanel({
             expected_version: active.version,
           }
         : { change_summary: newRevisionSummary.trim() })
-      setSelectedUuid(revision.uuid)
       setNewRevisionSummary('')
       setActionNotice(`Revision #${revision.revision_number} created as a draft.`)
-      setReloadVersion((value) => value + 1)
       await onCandidateChanged()
+      setSelectedUuid(revision.uuid)
+      setReloadVersion((value) => value + 1)
     } catch (failure) {
       issueError(failure, 'Unable to create a candidate revision.')
     } finally {
@@ -288,17 +332,21 @@ export function CandidateRevisionPanel({
     setBusy(true)
     setActionError(null)
     setActionNotice(null)
+    setShowConflictReload(false)
     setValidationErrors([])
+    setValidationErrorRevisionUuid(null)
     try {
       if (kind === 'validate') {
         const result = await validateSchedulingCandidateRevision(detail.revision.uuid, {
           expected_version: detail.revision.version,
           reason: actionReason.trim(),
         })
+        const passed = result.revision.validation_status === 'valid' && result.errors.length === 0
         setValidationErrors(result.errors)
-        setActionNotice(result.errors.length
-          ? 'Validation found errors. Review the diagnostics below.'
-          : 'Validation passed.')
+        setValidationErrorRevisionUuid(detail.revision.uuid)
+        setActionNotice(passed
+          ? 'Validation passed.'
+          : `Validation did not pass (${result.revision.validation_status.replaceAll('_', ' ')}). Review the diagnostics below.`)
       } else {
         await transitionSchedulingCandidateRevision(detail.revision.uuid, {
           expected_version: detail.revision.version,
@@ -445,12 +493,21 @@ export function CandidateRevisionPanel({
               ) : null}
 
               {actionNotice ? <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{actionNotice}</p> : null}
-              {actionError ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">{actionError}</p> : null}
-              {validationErrors.length ? (
+              {actionError ? (
+                <div role="alert" className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">
+                  <p>{actionError}</p>
+                  {showConflictReload ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => void handleReloadLatestRevision()}>
+                      Reload latest revision
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {visibleValidationErrors.length ? (
                 <div className="rounded-lg border border-red-200 bg-white p-3">
                   <p className="text-xs font-semibold text-red-900">Validation errors</p>
                   <ul className="mt-1.5 space-y-1 text-xs leading-5 text-red-800">
-                    {validationErrors.map((error) => <li key={error}>{error}</li>)}
+                    {visibleValidationErrors.map((error) => <li key={error}>{error}</li>)}
                   </ul>
                 </div>
               ) : null}
@@ -460,7 +517,7 @@ export function CandidateRevisionPanel({
                 parentAssignments={parentDetail?.content.assignments ?? null}
                 options={options}
                 diagnostics={[]}
-                validationErrors={detail.content.validation_summary.validation_errors}
+                validationErrors={visibleValidationErrors.length ? visibleValidationErrors : detail.content.validation_summary.validation_errors}
                 selectedId={selectedMeetingId}
                 onSelect={setSelectedMeetingId}
               />
