@@ -86,7 +86,7 @@ export function ConfirmationDialog({
       onClick={(event) => {
         if (event.target === event.currentTarget) handleClose()
       }}
-      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100%-2rem))] overflow-hidden rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40"
+      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100%-2rem))] overflow-y-auto rounded-xl border border-line bg-white p-0 text-ink shadow-2xl backdrop:bg-maroon-900/40"
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
     >

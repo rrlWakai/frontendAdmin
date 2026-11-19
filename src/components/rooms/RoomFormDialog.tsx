@@ -54,6 +54,7 @@ export function RoomFormDialog({ room, onCancel, onSubmit }: RoomFormDialogProps
     description: string
     confirmLabel: string
     cancelLabel: string
+    destructive?: boolean
     onConfirm: () => void | Promise<void>
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +81,7 @@ export function RoomFormDialog({ room, onCancel, onSubmit }: RoomFormDialogProps
         description: `Change ${room.code} from available to ${values.status}? Active schedule allocations must be released before the room can be deactivated.`,
         confirmLabel: 'Change status',
         cancelLabel: 'Keep available',
+        destructive: true,
         onConfirm: () => {
           setConfirmDialog(null)
           proceedWithSubmit()
@@ -268,7 +270,7 @@ export function RoomFormDialog({ room, onCancel, onSubmit }: RoomFormDialogProps
           description={confirmDialog.description}
           confirmLabel={confirmDialog.confirmLabel}
           cancelLabel={confirmDialog.cancelLabel}
-          destructive={false}
+          destructive={confirmDialog.destructive}
           isLoading={isSaving}
           onConfirm={confirmDialog.onConfirm}
         />
