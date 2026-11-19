@@ -6,6 +6,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
   RefreshCw,
   Sparkles,
@@ -24,16 +26,18 @@ import { durationBetween, formatDuration } from '@/components/scheduling/candida
 import {
   fetchOfferingFacultyAssignments,
   fetchSchedulingCandidate,
+  fetchSchedulingGenerationHistory,
   fetchSchedulingReadiness,
   fetchSchedules,
   solveScheduling,
 } from '@/services/api/scheduling'
-import type { AcademicTerm } from '@/types/academic'
+import type { AcademicPagination, AcademicTerm } from '@/types/academic'
 import type {
   CandidateRevisionStatus,
   ScheduleConflictRecord,
   ScheduleRecord,
   SchedulingCandidateDetail,
+  SchedulingGenerationHistoryRecord,
   SchedulingOptions,
   SchedulingReadiness,
   SchedulingSolveResponse,
@@ -241,6 +245,18 @@ export function IntelligentScheduleWorkspace({
   const [candidateLoading, setCandidateLoading] = useState(false)
   const [candidateError, setCandidateError] = useState<string | null>(null)
   const [generationNotice, setGenerationNotice] = useState<string | null>(null)
+  const [generationHistory, setGenerationHistory] = useState<SchedulingGenerationHistoryRecord[]>([])
+  const [historyPagination, setHistoryPagination] = useState<AcademicPagination>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 10,
+    total: 0,
+  })
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyVersion, setHistoryVersion] = useState(0)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [selectedHistory, setSelectedHistory] = useState<SchedulingGenerationHistoryRecord | null>(null)
   const [showConfiguration, setShowConfiguration] = useState(false)
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false)
   const [resetTermId, setResetTermId] = useState(termId)
@@ -250,6 +266,10 @@ export function IntelligentScheduleWorkspace({
     setCandidateDetail(null)
     setCandidateError(null)
     setGenerationNotice(null)
+    setGenerationHistory([])
+    setHistoryPage(1)
+    setHistoryError(null)
+    setSelectedHistory(null)
     setSolveError(null)
     setInventory(null)
     setReadiness(null)
@@ -300,10 +320,49 @@ export function IntelligentScheduleWorkspace({
     }
   }, [])
 
+  useEffect(() => {
+    if (!termId) return
+    let active = true
+
+    void Promise.resolve().then(async () => {
+      setHistoryLoading(true)
+      setHistoryError(null)
+      try {
+        const result = await fetchSchedulingGenerationHistory({
+          academic_term_id: termId,
+          page: historyPage,
+          per_page: 10,
+        })
+        if (active) {
+          setGenerationHistory(result.generations)
+          setHistoryPagination(result.pagination)
+        }
+      } catch (failure) {
+        if (active) {
+          setGenerationHistory([])
+          setHistoryError(getApiErrorMessage(failure, 'Unable to load generation history.'))
+        }
+      } finally {
+        if (active) setHistoryLoading(false)
+      }
+    })
+
+    return () => { active = false }
+  }, [historyPage, historyVersion, termId])
+
   const handleDirtyChange = useCallback((dirty: boolean) => {
     setHasUnsavedEdits(dirty)
     onDirtyChange?.(dirty)
   }, [onDirtyChange])
+
+  const handleSelectHistory = useCallback(async (generation: SchedulingGenerationHistoryRecord) => {
+    if (hasUnsavedEdits && !window.confirm('Open this historical generation? Unsaved edits in the current revision will be discarded.')) return
+    setSelectedHistory(generation)
+    setCandidateError(null)
+    setStage('review')
+    if (generation.candidate?.uuid) await loadCandidate(generation.candidate.uuid)
+    else setCandidateDetail(null)
+  }, [hasUnsavedEdits, loadCandidate])
 
   const offeringSignature = options?.offerings
     .map((offering) => offering.id)
@@ -880,6 +939,7 @@ export function IntelligentScheduleWorkspace({
     setSolving(true)
     setSolveError(null)
     setGenerationNotice(null)
+    setSelectedHistory(null)
 
     try {
       const run = await solveScheduling({ academic_term_id: termId })
@@ -896,6 +956,7 @@ export function IntelligentScheduleWorkspace({
       setSolveError(solveFailureMessage(failure))
     } finally {
       setSolving(false)
+      setHistoryVersion((value) => value + 1)
     }
   }, [generationReady, loadCandidate, termId])
 
@@ -924,7 +985,11 @@ export function IntelligentScheduleWorkspace({
     generation: solving
       ? 'Running'
       : latestRun?.generation.result_status ?? latestRun?.generation.status ?? 'Not generated',
-    review: latestRun?.candidate ? `${latestRun.candidate.assignment_count} placements` : 'No candidate',
+    review: candidateDetail
+      ? `${candidateDetail.candidate.assignment_count} placements`
+      : latestRun?.candidate
+        ? `${latestRun.candidate.assignment_count} placements`
+        : 'No candidate',
     revision: activeCandidateRevision(candidateDetail)
       ? `Active ${activeCandidateRevision(candidateDetail)?.replaceAll('_', ' ')}`
       : 'No revision',
@@ -1002,30 +1067,53 @@ export function IntelligentScheduleWorkspace({
           solveError={solveError}
           latestRun={latestRun}
           generationNotice={generationNotice}
+          history={generationHistory}
+          historyPagination={historyPagination}
+          historyLoading={historyLoading}
+          historyError={historyError}
+          selectedHistoryUuid={selectedHistory?.uuid ?? null}
+          onSelectHistory={(generation) => void handleSelectHistory(generation)}
+          onRefreshHistory={() => setHistoryVersion((value) => value + 1)}
+          onHistoryPageChange={setHistoryPage}
         />
       ) : null}
 
       {stage === 'review' ? (
-        <ReviewStage
-          run={latestRun}
-          candidateDetail={candidateDetail}
-          candidateLoading={candidateLoading}
-          candidateError={candidateError}
-          options={options}
-          publishedCount={publishedSchedules.length}
-          onGoToGeneration={() => requestStageChange('generation')}
-          onGoToRevision={() => requestStageChange('revision')}
-        />
+        selectedHistory ? (
+          <HistoricalGenerationReview
+            generation={selectedHistory}
+            candidateDetail={candidateDetail}
+            candidateLoading={candidateLoading}
+            candidateError={candidateError}
+            onGoToGeneration={() => {
+              setSelectedHistory(null)
+              requestStageChange('generation')
+            }}
+            onGoToRevision={() => requestStageChange('revision')}
+          />
+        ) : (
+          <ReviewStage
+            run={latestRun}
+            candidateDetail={candidateDetail}
+            candidateLoading={candidateLoading}
+            candidateError={candidateError}
+            options={options}
+            publishedCount={publishedSchedules.length}
+            onGoToGeneration={() => requestStageChange('generation')}
+            onGoToRevision={() => requestStageChange('revision')}
+          />
+        )
       ) : null}
 
       {stage === 'revision' ? (
         candidateDetail ? (
           <CandidateRevisionPanel
+            key={candidateDetail.candidate.uuid}
             candidate={candidateDetail}
             options={options}
             onDirtyChange={handleDirtyChange}
             onCandidateChanged={async () => {
-              const uuid = latestRun?.candidate?.uuid
+              const uuid = candidateDetail?.candidate.uuid ?? latestRun?.candidate?.uuid
               if (uuid) await loadCandidate(uuid)
             }}
           />
@@ -1422,6 +1510,14 @@ function GenerationStage({
   solveError,
   latestRun,
   generationNotice,
+  history,
+  historyPagination,
+  historyLoading,
+  historyError,
+  selectedHistoryUuid,
+  onSelectHistory,
+  onRefreshHistory,
+  onHistoryPageChange,
 }: {
   term: AcademicTerm | undefined
   inventoryLoading: boolean
@@ -1444,6 +1540,14 @@ function GenerationStage({
   solveError: string | null
   latestRun: SchedulingSolveResponse | null
   generationNotice: string | null
+  history: SchedulingGenerationHistoryRecord[]
+  historyPagination: AcademicPagination
+  historyLoading: boolean
+  historyError: string | null
+  selectedHistoryUuid: string | null
+  onSelectHistory: (generation: SchedulingGenerationHistoryRecord) => void
+  onRefreshHistory: () => void
+  onHistoryPageChange: (page: number) => void
 }) {
   const baselineValue = inventoryLoading
     ? 'Loading published records…'
@@ -1515,6 +1619,127 @@ function GenerationStage({
             ) : (
               <p className="text-xs text-ink-muted">No generation has been run in this workspace for the selected term.</p>
             )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2 py-4">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Generation history</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Persisted runs for the selected term. Selecting a run opens its own candidate and revisions.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              isLoading={historyLoading}
+              onClick={onRefreshHistory}
+              leftIcon={<RefreshCw className="size-4" aria-hidden="true" />}
+            >
+              Refresh
+            </Button>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            {historyError ? (
+              <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+                <p role="alert" className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  {historyError}
+                </p>
+                <Button type="button" size="sm" variant="outline" onClick={onRefreshHistory}>Retry</Button>
+              </div>
+            ) : null}
+            {historyLoading ? (
+              <p role="status" className="flex items-center gap-2 text-xs text-ink-muted">
+                <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+                Loading generation history…
+              </p>
+            ) : null}
+            {!historyLoading && !historyError && history.length === 0 ? (
+              <EmptyState
+                icon={CalendarDays}
+                title="No generation history"
+                description="No persisted generation records exist for this academic term yet."
+              />
+            ) : null}
+            {history.map((generation) => (
+              <button
+                key={generation.uuid}
+                type="button"
+                aria-current={generation.uuid === selectedHistoryUuid ? 'true' : undefined}
+                onClick={() => onSelectHistory(generation)}
+                className={`w-full rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-maroon-600 ${
+                  generation.uuid === selectedHistoryUuid
+                    ? 'border-maroon-300 bg-maroon-50'
+                    : 'border-line bg-surface-soft hover:border-maroon-200 hover:bg-white'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-mono text-xs font-semibold text-ink">{shortenIdentifier(generation.uuid)}</p>
+                  <Badge tone={generationTone(generation)}>{generation.result_status ?? generation.status}</Badge>
+                </div>
+                <dl className="mt-2 grid gap-1 text-[11px] leading-4 text-ink-muted sm:grid-cols-2">
+                  <div><dt className="inline font-semibold">Requested:</dt> <dd className="inline">{formatHistoryTimestamp(generation.requested_at)}</dd></div>
+                  <div><dt className="inline font-semibold">Started:</dt> <dd className="inline">{formatHistoryTimestamp(generation.started_at)}</dd></div>
+                  <div><dt className="inline font-semibold">Completed:</dt> <dd className="inline">{formatHistoryTimestamp(generation.completed_at)}</dd></div>
+                  <div><dt className="inline font-semibold">Duration:</dt> <dd className="inline">{generation.solver_execution_ms === null ? 'Not recorded' : `${generation.solver_execution_ms} ms`}</dd></div>
+                  <div><dt className="inline font-semibold">Candidates:</dt> <dd className="inline">{generation.candidate_count}</dd></div>
+                  <div><dt className="inline font-semibold">Contract:</dt> <dd className="inline">{generation.contract_version ?? 'Not recorded'}</dd></div>
+                </dl>
+                {generation.candidate ? (
+                  <p className="mt-2 text-[11px] text-ink-muted">
+                    Candidate {shortenIdentifier(generation.candidate.uuid)} · version {generation.candidate.version} · {generation.candidate.assignment_count} placements
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[11px] text-ink-muted">No candidate was persisted for this run.</p>
+                )}
+                {generation.failure_code || generation.failure_message ? (
+                  <p className="mt-2 text-[11px] leading-4 text-red-800">
+                    {generation.failure_code ?? 'Failure'}: {generation.failure_message ?? 'No message recorded.'}
+                  </p>
+                ) : null}
+                {generation.diagnostics.codes.length ? (
+                  <p className="mt-1 text-[11px] leading-4 text-ink-muted">
+                    Diagnostics: {generation.diagnostics.codes.join(', ')}
+                  </p>
+                ) : null}
+                <p className="mt-2 text-[11px] font-semibold text-maroon-700">
+                  {generation.candidate ? 'Open candidate and revisions' : 'View generation details'}
+                </p>
+              </button>
+            ))}
+            {historyPagination.last_page > 1 ? (
+              <div className="flex items-center justify-between border-t border-line pt-3">
+                <p className="text-[11px] text-ink-muted">
+                  Page {historyPagination.current_page} of {historyPagination.last_page} · {historyPagination.total} total
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="Previous generation page"
+                    disabled={historyPagination.current_page <= 1 || historyLoading}
+                    onClick={() => onHistoryPageChange(Math.max(1, historyPagination.current_page - 1))}
+                    leftIcon={<ChevronLeft className="size-4" aria-hidden="true" />}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="Next generation page"
+                    disabled={historyPagination.current_page >= historyPagination.last_page || historyLoading}
+                    onClick={() => onHistoryPageChange(Math.min(historyPagination.last_page, historyPagination.current_page + 1))}
+                  >
+                    Next <ChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </CardBody>
         </Card>
 
@@ -1694,6 +1919,150 @@ function PreferenceCheckbox({
       />
       {children}
     </label>
+  )
+}
+
+function HistoricalGenerationReview({
+  generation,
+  candidateDetail,
+  candidateLoading,
+  candidateError,
+  onGoToGeneration,
+  onGoToRevision,
+}: {
+  generation: SchedulingGenerationHistoryRecord
+  candidateDetail: SchedulingCandidateDetail | null
+  candidateLoading: boolean
+  candidateError: string | null
+  onGoToGeneration: () => void
+  onGoToRevision: () => void
+}) {
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2 py-4">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Historical generation</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">This review is loaded from the selected persisted generation.</p>
+          </div>
+          <Badge tone={generationTone(generation)}>{generation.result_status ?? generation.status}</Badge>
+        </CardHeader>
+        <CardBody>
+          <dl>
+            <DefinitionRow label="Generation" value={shortenIdentifier(generation.uuid)} detail={`Status: ${generation.status}`} />
+            <DefinitionRow label="Solver outcome" value={`${generation.solver_status ?? 'Not recorded'} · ${generation.result_status ?? 'Not recorded'}`} />
+            <DefinitionRow
+              label="Timeline"
+              value={`Requested ${formatHistoryTimestamp(generation.requested_at)}`}
+              detail={`Started ${formatHistoryTimestamp(generation.started_at)} · Completed ${formatHistoryTimestamp(generation.completed_at)}`}
+            />
+            <DefinitionRow
+              label="Execution"
+              value={generation.solver_execution_ms === null ? 'Not recorded' : `${generation.solver_execution_ms} ms`}
+              detail={`Contract ${generation.contract_version ?? 'Not recorded'}`}
+            />
+            <DefinitionRow
+              label="Candidates"
+              value={`${generation.candidate_count}`}
+              detail={generation.correlation_id ? `Correlation ${generation.correlation_id}` : undefined}
+            />
+            {generation.failure_code || generation.failure_message ? (
+              <DefinitionRow
+                label="Failure"
+                value={generation.failure_code ?? 'Not coded'}
+                detail={generation.failure_message ?? undefined}
+              />
+            ) : null}
+            {generation.diagnostics.codes.length ? (
+              <DefinitionRow label="Diagnostics" value={generation.diagnostics.codes.join(', ')} />
+            ) : null}
+            {generation.diagnostics.frozen_source ? (
+              <DefinitionRow
+                label="Frozen source"
+                value={generation.diagnostics.frozen_source.snapshot_sha256 ?? 'Not recorded'}
+                detail={`Fingerprint ${generation.diagnostics.frozen_source.fingerprint ?? 'Not recorded'}`}
+              />
+            ) : null}
+          </dl>
+        </CardBody>
+      </Card>
+
+      {!generation.candidate ? (
+        <Card>
+          <EmptyState
+            icon={CalendarDays}
+            title="No candidate persisted"
+            description="This generation did not produce a persisted candidate, so there are no revisions to review."
+          />
+        </Card>
+      ) : candidateLoading ? (
+        <Card>
+          <p role="status" className="flex items-center gap-2 px-5 py-4 text-xs text-ink-muted">
+            <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
+            Loading the selected generation’s candidate and revisions…
+          </p>
+        </Card>
+      ) : candidateError ? (
+        <Card>
+          <p role="alert" className="m-5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">
+            {candidateError}
+          </p>
+        </Card>
+      ) : candidateDetail ? (
+        <>
+          <Card>
+            <CardHeader className="py-4">
+              <h2 className="text-sm font-semibold text-ink">Persisted candidate</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">Loaded by candidate UUID from the selected generation.</p>
+            </CardHeader>
+            <CardBody>
+              <dl>
+                <DefinitionRow label="Candidate" value={shortenIdentifier(candidateDetail.candidate.uuid)} detail={`Version ${candidateDetail.candidate.version}`} />
+                <DefinitionRow label="Status" value={candidateDetail.candidate.status} detail={`Validation: ${candidateDetail.candidate.validation_status}`} />
+                <DefinitionRow label="Placements" value={`${candidateDetail.candidate.assignment_count}`} />
+                <DefinitionRow label="Revisions" value={`${candidateDetail.revisions.length}`} />
+              </dl>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader className="py-4">
+              <h2 className="text-sm font-semibold text-ink">Revision history</h2>
+              <p className="mt-0.5 text-xs text-ink-muted">Every revision below belongs to this candidate.</p>
+            </CardHeader>
+            <div className="divide-y divide-line">
+              {candidateDetail.revisions.length ? candidateDetail.revisions.map((revision) => (
+                <div key={revision.uuid} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+                  <div>
+                    <p className="text-xs font-semibold text-ink">Revision #{revision.revision_number} · {shortenIdentifier(revision.uuid)}</p>
+                    <p className="mt-0.5 text-[11px] text-ink-muted">
+                      {revision.status} · {revision.validation_status} · version {revision.version}
+                      {revision.change_summary ? ` · ${revision.change_summary}` : ''}
+                    </p>
+                  </div>
+                  <Badge tone={revision.status === 'validated' ? 'success' : revision.status === 'needs_revision' ? 'warning' : 'neutral'}>
+                    {revision.status.replaceAll('_', ' ')}
+                  </Badge>
+                </div>
+              )) : (
+                <p className="px-5 py-4 text-xs text-ink-muted">No revisions are recorded for this candidate.</p>
+              )}
+            </div>
+          </Card>
+        </>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2">
+        {candidateDetail ? (
+          <Button onClick={onGoToRevision} leftIcon={<ArrowRight className="size-4" aria-hidden="true" />}>
+            Open revision and validation
+          </Button>
+        ) : null}
+        <Button variant="outline" onClick={onGoToGeneration}>
+          Back to generation
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -1887,6 +2256,23 @@ function ReviewStage({
       </div>
     </div>
   )
+}
+
+function formatHistoryTimestamp(value: string | null): string {
+  if (!value) return 'Not recorded'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function shortenIdentifier(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value
+}
+
+function generationTone(generation: SchedulingGenerationHistoryRecord): BadgeTone {
+  if (generation.status === 'failed' || generation.result_status === 'INFEASIBLE') return 'danger'
+  if (generation.status === 'running' || generation.status === 'queued') return 'info'
+  if (generation.result_status === 'FEASIBLE') return 'success'
+  return 'warning'
 }
 
 function stateClasses(state: ReadinessState): string {

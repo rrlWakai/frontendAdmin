@@ -327,6 +327,45 @@ export interface SchedulingGenerationRecord {
   completed_at: string | null
 }
 
+export interface SchedulingGenerationDiagnostics {
+  codes: string[]
+  frozen_source: {
+    snapshot_sha256: string | null
+    contract_version: string | null
+    solver_config_sha256: string | null
+    fingerprint: string | null
+  } | null
+}
+
+export interface SchedulingGenerationHistoryRecord {
+  uuid: string
+  status: string
+  solver_status: string | null
+  result_status: string | null
+  failure_code: string | null
+  failure_message: string | null
+  requested_at: string | null
+  started_at: string | null
+  completed_at: string | null
+  solver_execution_ms: number | null
+  candidate_count: number
+  diagnostics: SchedulingGenerationDiagnostics
+  contract_version: string | null
+  correlation_id: string | null
+  candidate: SchedulingCandidateRecord | null
+}
+
+export interface SchedulingGenerationHistoryFilters {
+  academic_term_id: number
+  page?: number
+  per_page?: number
+}
+
+export interface SchedulingGenerationHistoryResponse {
+  generations: SchedulingGenerationHistoryRecord[]
+  pagination: AcademicPagination
+}
+
 export interface SchedulingCandidateRecord {
   uuid: string
   version: number

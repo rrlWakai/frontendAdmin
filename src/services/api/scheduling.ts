@@ -13,6 +13,8 @@ import type {
   SchedulingCandidateDetail,
   SchedulingCandidateRevisionDetail,
   SchedulingCandidateRevisionSummary,
+  SchedulingGenerationHistoryFilters,
+  SchedulingGenerationHistoryResponse,
   SchedulingMeetingPlan,
   SchedulingMeetingPlanIndex,
   SchedulingMeetingPlanInput,
@@ -44,6 +46,17 @@ export async function fetchSchedulingReadiness(termId: number): Promise<Scheduli
   )
 
   return data.data.readiness
+}
+
+export async function fetchSchedulingGenerationHistory(
+  filters: SchedulingGenerationHistoryFilters,
+): Promise<SchedulingGenerationHistoryResponse> {
+  const { data } = await apiClient.get<ApiSuccessResponse<SchedulingGenerationHistoryResponse>>(
+    '/scheduling/generations',
+    { params: filters },
+  )
+
+  return data.data
 }
 
 export async function solveScheduling(input: SchedulingSolveInput): Promise<SchedulingSolveResponse> {
