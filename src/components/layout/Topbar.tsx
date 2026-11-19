@@ -2,6 +2,7 @@ import { LogOut, Megaphone, Menu, ShieldCheck } from 'lucide-react'
 import { Link, useMatches } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import type { RouteHandle } from '@/routes/types'
+import { IconButton } from '@/components/common/IconButton'
 
 interface TopbarProps {
   onMenuClick: () => void
@@ -37,13 +38,12 @@ export function Topbar({ onMenuClick }: TopbarProps) {
           {user?.roleLabel ?? 'Administrative access'}
         </span>
 
-        <Link
-          to="/activities?view=announcements"
-          className="rounded-lg p-2 text-ink-muted transition hover:bg-surface-soft hover:text-ink"
-          aria-label="Open campus announcements"
-        >
-          <Megaphone className="size-[18px]" aria-hidden="true" />
-        </Link>
+        <span className="group relative inline-flex">
+          <Link to="/activities?view=announcements" className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-ink-muted transition hover:bg-surface-soft hover:text-ink" aria-label="Open announcements">
+            <Megaphone className="size-[18px]" aria-hidden="true" />
+          </Link>
+          <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-maroon-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Open announcements</span>
+        </span>
 
         <div className="flex items-center gap-2.5 border-l border-line pl-2 sm:pl-3">
           <div className="flex size-9 items-center justify-center rounded-full bg-maroon-50 text-maroon-700">
@@ -57,14 +57,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               {user?.roleLabel ?? 'Phase 2 access control'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="rounded-lg p-2 text-ink-muted transition hover:bg-surface-soft hover:text-ink"
-            aria-label="Sign out"
-          >
+          <IconButton label="Sign out" onClick={() => void logout()}>
             <LogOut className="size-[18px]" aria-hidden="true" />
-          </button>
+          </IconButton>
         </div>
       </div>
     </header>
