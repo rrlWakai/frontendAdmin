@@ -395,7 +395,7 @@ export function FacultyPage() {
     <>
       <PageHeader
         eyebrow="People directory"
-        title="Faculty management"
+        title="Faculty"
         description="Review faculty profiles, availability, teaching assignments, workload, and account access."
       />
 

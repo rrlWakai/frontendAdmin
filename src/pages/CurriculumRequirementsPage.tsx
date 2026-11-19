@@ -37,7 +37,7 @@ function majorLabel(requirement: AcademicCurriculumRequirement): string {
 
 const config: AcademicPageConfig<AcademicCurriculumRequirement> = {
   resource: 'curriculum-requirements',
-  title: 'Curriculum mappings',
+  title: 'Curriculum',
   description:
     'Map catalog subjects to program, year level, semester, and major scope. These mappings validate class assignments for scheduling; they never create class assignments automatically.',
   singular: 'Curriculum mapping',

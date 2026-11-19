@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
 import { AdminLayout } from '@/layouts/AdminLayout'
+import { AcademicStructurePage } from '@/pages/AcademicStructurePage'
 import { AcademicPage } from '@/pages/AcademicPage'
 import { AcademicTermsPage } from '@/pages/AcademicTermsPage'
 import { AcademicYearsPage } from '@/pages/AcademicYearsPage'
@@ -50,10 +51,15 @@ const routes: RouteObject[] = [
           {
             path: 'users',
             element: <UsersPage />,
-            handle: { title: 'Users & Access' } satisfies RouteHandle,
+            handle: { title: 'Users & access' } satisfies RouteHandle,
           },
           {
             path: 'academic',
+            element: <AcademicStructurePage />,
+            handle: { title: 'Academic structure' } satisfies RouteHandle,
+          },
+          {
+            path: 'academic/programs',
             element: <AcademicPage />,
             handle: { title: 'Academic programs' } satisfies RouteHandle,
           },
@@ -70,7 +76,7 @@ const routes: RouteObject[] = [
           {
             path: 'academic/curriculum',
             element: <CurriculumRequirementsPage />,
-            handle: { title: 'Curriculum requirements' } satisfies RouteHandle,
+            handle: { title: 'Curriculum' } satisfies RouteHandle,
           },
           {
             path: 'academic/terms',
@@ -95,27 +101,27 @@ const routes: RouteObject[] = [
           {
             path: 'scheduling',
             element: <SchedulingPage />,
-            handle: { title: 'Intelligent Scheduling' } satisfies RouteHandle,
+            handle: { title: 'Scheduling' } satisfies RouteHandle,
           },
           {
             path: 'faculty',
             element: <FacultyPage />,
-            handle: { title: 'Faculty records' } satisfies RouteHandle,
+            handle: { title: 'Faculty' } satisfies RouteHandle,
           },
           {
             path: 'students',
             element: <StudentsPage />,
-            handle: { title: 'Student directory' } satisfies RouteHandle,
+            handle: { title: 'Students' } satisfies RouteHandle,
           },
           {
             path: 'subjects',
             element: <SubjectsPage />,
-            handle: { title: 'Subject catalog' } satisfies RouteHandle,
+            handle: { title: 'Subjects' } satisfies RouteHandle,
           },
           {
             path: 'rooms',
             element: <RoomsPage />,
-            handle: { title: 'Room inventory' } satisfies RouteHandle,
+            handle: { title: 'Rooms' } satisfies RouteHandle,
           },
           {
             path: 'announcements',

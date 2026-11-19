@@ -418,7 +418,7 @@ export function SchedulingPage() {
     <div>
       <PageHeader
         eyebrow="Schedule"
-        title="Intelligent Scheduling"
+        title="Scheduling"
         description="Generate, review, and revise candidate timetables for the selected academic term."
         actions={(
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">

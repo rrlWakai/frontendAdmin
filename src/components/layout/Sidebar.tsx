@@ -1,13 +1,11 @@
 import { useId, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  BookOpenCheck,
   CalendarDays,
   ChevronDown,
   DoorOpen,
   GraduationCap,
   LayoutDashboard,
-  Library,
   Sparkles,
   Users,
   UserRound,
@@ -61,13 +59,11 @@ function getBranchKey(item: NavigationParent, pathname: string): string {
 }
 
 const academicChildren: NavigationChild[] = [
-  { label: 'Programs', to: '/academic', end: true },
-  { label: 'Academic years', to: '/academic/academic-years' },
-  { label: 'Majors', to: '/academic/majors' },
+  { label: 'Academic structure', to: '/academic', end: true },
+  { label: 'Academic terms', to: '/academic/terms' },
+  { label: 'Subjects', to: '/subjects' },
   { label: 'Curriculum', to: '/academic/curriculum' },
-  { label: 'Academic Terms', to: '/academic/terms' },
-  { label: 'Year Levels', to: '/academic/year-levels' },
-  { label: 'Sections', to: '/academic/sections' },
+  { label: 'Class assignments', to: '/academic/subject-offerings' },
 ]
 
 const navigation: NavigationGroup[] = [
@@ -87,8 +83,6 @@ const navigation: NavigationGroup[] = [
         icon: GraduationCap,
         children: academicChildren,
       },
-      { label: 'Subjects', to: '/subjects', icon: Library },
-      { label: 'Class assignments', to: '/academic/subject-offerings', icon: BookOpenCheck },
       { label: 'Faculty', to: '/faculty', icon: UsersRound },
       { label: 'Rooms', to: '/rooms', icon: DoorOpen },
     ],

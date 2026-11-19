@@ -220,7 +220,7 @@ export function RoomsPage() {
     <>
       <PageHeader
         eyebrow="Academic structure"
-        title="Room inventory"
+        title="Rooms"
         description="Track classrooms, laboratories, capacity, and availability for the College of Computer Studies."
         actions={canManage ? (
           <Button leftIcon={<Plus className="size-4" aria-hidden="true" />} onClick={() => setDialogRoom(null)}>

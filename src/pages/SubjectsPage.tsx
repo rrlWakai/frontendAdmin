@@ -5,7 +5,7 @@ import type { AcademicSubject } from '@/types/academic'
 
 const config: AcademicPageConfig<AcademicSubject> = {
   resource: 'subjects',
-  title: 'Subject catalog',
+  title: 'Subjects',
   description:
     'Maintain the centralized subject definitions used by curriculum mappings and class assignments.',
   singular: 'Subject',

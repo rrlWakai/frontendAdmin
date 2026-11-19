@@ -295,7 +295,7 @@ export function StudentsPage() {
     <>
       <PageHeader
         eyebrow="Student records"
-        title="Student Logs"
+        title="Students"
         description="Monitor student account activity, academic records, and account removal history."
       />
 
