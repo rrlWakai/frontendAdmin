@@ -156,7 +156,7 @@ export function CandidateRevisionPanel({
 
         const parent = result.revision.parent_revision_id === null
           ? null
-          : candidate.revisions.find((revision) => revision.revision_number === result.revision.revision_number - 1)
+          : candidate.revisions.find((revision) => revision.id === result.revision.parent_revision_id)
         if (parent) {
           try {
             const parentResult = await fetchSchedulingCandidateRevision(parent.uuid)
@@ -617,7 +617,7 @@ export function CandidateRevisionPanel({
             <CardHeader className="py-4">
               <h2 className="text-sm font-semibold text-ink">Validation and review actions</h2>
               <p className="mt-0.5 text-xs text-ink-muted">
-                Available actions follow the backend transition rules. Approval and publication are not part of this workflow.
+                Available actions follow the backend transition rules. Approval and publication are handled from the review stage after validation.
               </p>
             </CardHeader>
             <CardBody className="space-y-4">

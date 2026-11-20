@@ -1,6 +1,7 @@
 import type { ApiSuccessResponse } from '@/types/api'
 import type {
   CandidateRevisionStatusEvent,
+  CandidateStatusEvent,
   CreateCandidateRevisionInput,
   FacultyAssignmentInput,
   FacultyAssignmentOption,
@@ -11,6 +12,8 @@ import type {
   ScheduleInput,
   ScheduleRecord,
   SchedulingCandidateDetail,
+  SchedulingCandidateLifecycleInput,
+  SchedulingCandidateLifecycleResult,
   SchedulingCandidateRevisionDetail,
   SchedulingCandidateRevisionSummary,
   SchedulingGenerationHistoryFilters,
@@ -25,6 +28,7 @@ import type {
   SchedulingTimeGrid,
   SchedulingTimeGridIndex,
   SchedulingTimeGridInput,
+  TimetablePublicationRecord,
   TransitionCandidateRevisionInput,
   UpdateCandidateRevisionInput,
   ValidateCandidateRevisionInput,
@@ -74,6 +78,86 @@ export async function fetchSchedulingCandidate(candidateUuid: string): Promise<S
   )
 
   return data.data
+}
+
+export async function reviewSchedulingCandidate(
+  candidateUuid: string,
+  input: SchedulingCandidateLifecycleInput,
+): Promise<SchedulingCandidateLifecycleResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SchedulingCandidateLifecycleResult>>(
+    `/scheduling/candidates/${candidateUuid}/review`,
+    input,
+  )
+
+  return data.data
+}
+
+export async function approveSchedulingCandidate(
+  candidateUuid: string,
+  input: SchedulingCandidateLifecycleInput,
+): Promise<SchedulingCandidateLifecycleResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SchedulingCandidateLifecycleResult>>(
+    `/scheduling/candidates/${candidateUuid}/approve`,
+    input,
+  )
+
+  return data.data
+}
+
+export async function rejectSchedulingCandidate(
+  candidateUuid: string,
+  input: SchedulingCandidateLifecycleInput,
+): Promise<SchedulingCandidateLifecycleResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SchedulingCandidateLifecycleResult>>(
+    `/scheduling/candidates/${candidateUuid}/reject`,
+    input,
+  )
+
+  return data.data
+}
+
+export async function publishSchedulingCandidate(
+  candidateUuid: string,
+  input: SchedulingCandidateLifecycleInput,
+): Promise<SchedulingCandidateLifecycleResult> {
+  const { data } = await apiClient.post<ApiSuccessResponse<SchedulingCandidateLifecycleResult>>(
+    `/scheduling/candidates/${candidateUuid}/publish`,
+    input,
+  )
+
+  return data.data
+}
+
+export async function fetchSchedulingCandidateStatusEvents(
+  candidateUuid: string,
+): Promise<CandidateStatusEvent[]> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ status_events: CandidateStatusEvent[] }>>(
+    `/scheduling/candidates/${candidateUuid}/status-events`,
+  )
+
+  return data.data.status_events
+}
+
+export async function fetchTimetablePublications(
+  academicTermId: number,
+): Promise<TimetablePublicationRecord[]> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ publications: TimetablePublicationRecord[] }>>(
+    '/scheduling/publications',
+    { params: { academic_term_id: academicTermId } },
+  )
+
+  return data.data.publications
+}
+
+export async function fetchActiveTimetablePublication(
+  academicTermId: number,
+): Promise<TimetablePublicationRecord | null> {
+  const { data } = await apiClient.get<ApiSuccessResponse<{ publication: TimetablePublicationRecord | null }>>(
+    '/scheduling/publications/active',
+    { params: { academic_term_id: academicTermId } },
+  )
+
+  return data.data.publication
 }
 
 export async function createSchedulingCandidateRevision(

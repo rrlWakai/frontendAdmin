@@ -18,18 +18,23 @@ import { Button } from '@/components/common/Button'
 import { Card, CardBody, CardHeader } from '@/components/common/Card'
 import { ConfirmationDialog } from '@/components/common/ConfirmationDialog'
 import { EmptyState } from '@/components/common/EmptyState'
+import { TextAreaField } from '@/components/common/TextAreaField'
 import { fetchProfessor } from '@/services/api/faculty'
 import { CandidateRevisionPanel } from '@/components/scheduling/CandidateRevisionPanel'
 import { CandidateTimetableGrid } from '@/components/scheduling/CandidateTimetableGrid'
 import { SchedulingConfigurationStage } from '@/components/scheduling/SchedulingConfigurationStage'
 import { durationBetween, formatDuration } from '@/components/scheduling/candidateRevisionModel'
 import {
+  approveSchedulingCandidate,
   fetchOfferingFacultyAssignments,
   fetchSchedulingCandidate,
   fetchSchedulingCandidateRevision,
   fetchSchedulingGenerationHistory,
   fetchSchedulingReadiness,
   fetchSchedules,
+  publishSchedulingCandidate,
+  rejectSchedulingCandidate,
+  reviewSchedulingCandidate,
   solveScheduling,
 } from '@/services/api/scheduling'
 import type { AcademicPagination, AcademicTerm } from '@/types/academic'
@@ -48,6 +53,7 @@ import { getApiErrorMessage } from '@/utils/apiError'
 import { cn } from '@/utils/cn'
 
 type WorkspaceStage = 'readiness' | 'generation' | 'review' | 'revision'
+type CandidateLifecycleAction = 'review' | 'approve' | 'reject' | 'publish'
 type ReadinessState = 'ready' | 'warning' | 'blocked' | 'checking' | 'info'
 type BadgeTone = 'neutral' | 'success' | 'warning' | 'info' | 'danger'
 
@@ -462,6 +468,31 @@ export function IntelligentScheduleWorkspace({
       if (requestId === candidateRequestRef.current) setCandidateLoading(false)
     }
   }, [])
+
+  const handleCandidateLifecycleAction = useCallback(async (
+    action: CandidateLifecycleAction,
+    reason: string,
+  ) => {
+    const candidateUuid = candidateDetail?.candidate.uuid
+    if (!candidateUuid) return
+
+    const input = {
+      expected_version: candidateDetail.candidate.version,
+      reason,
+    }
+    const actions = {
+      review: reviewSchedulingCandidate,
+      approve: approveSchedulingCandidate,
+      reject: rejectSchedulingCandidate,
+      publish: publishSchedulingCandidate,
+    }
+
+    await actions[action](candidateUuid, input)
+    await loadCandidate(candidateUuid)
+    setInventoryVersion((value) => value + 1)
+    setReadinessVersion((value) => value + 1)
+    setHistoryVersion((value) => value + 1)
+  }, [candidateDetail, loadCandidate])
 
   useEffect(() => {
     const restoredCandidateUuid = selectedHistory?.candidate?.uuid ?? latestRun?.candidate?.uuid
@@ -1166,8 +1197,14 @@ export function IntelligentScheduleWorkspace({
 
   const requestStageChange = useCallback((next: WorkspaceStage) => {
     if (hasUnsavedEdits && next !== stage && !window.confirm('Leave this revision stage? Unsaved edits will be discarded.')) return
+    if (next === 'generation' && selectedHistory) {
+      setSelectedHistory(null)
+      setCandidateDetail(null)
+      const candidateUuid = latestRun?.candidate?.uuid
+      if (candidateUuid) void loadCandidate(candidateUuid)
+    }
     setStage(next)
-  }, [hasUnsavedEdits, stage])
+  }, [hasUnsavedEdits, latestRun, loadCandidate, selectedHistory, stage])
 
   async function handleCheckAssignments() {
     try {
@@ -1293,10 +1330,7 @@ export function IntelligentScheduleWorkspace({
             candidateLoading={candidateLoading}
             candidateError={candidateError}
             options={options}
-            onGoToGeneration={() => {
-              setSelectedHistory(null)
-              requestStageChange('generation')
-            }}
+            onGoToGeneration={() => requestStageChange('generation')}
             onGoToRevision={() => requestStageChange('revision')}
           />
         ) : (
@@ -1307,6 +1341,7 @@ export function IntelligentScheduleWorkspace({
             candidateError={candidateError}
             options={options}
             publishedCount={publishedSchedules.length}
+            onLifecycleAction={(action, reason) => handleCandidateLifecycleAction(action, reason)}
             onGoToGeneration={() => requestStageChange('generation')}
             onGoToRevision={() => requestStageChange('revision')}
           />
@@ -2391,6 +2426,7 @@ function ReviewStage({
   candidateError,
   options,
   publishedCount,
+  onLifecycleAction,
   onGoToGeneration,
   onGoToRevision,
 }: {
@@ -2400,10 +2436,35 @@ function ReviewStage({
   candidateError: string | null
   options: SchedulingOptions | null
   publishedCount: number
+  onLifecycleAction: (action: CandidateLifecycleAction, reason: string) => Promise<void>
   onGoToGeneration: () => void
   onGoToRevision: () => void
 }) {
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null)
+  const [lifecycleReason, setLifecycleReason] = useState('')
+  const [lifecycleBusy, setLifecycleBusy] = useState(false)
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null)
+  const [lifecycleNotice, setLifecycleNotice] = useState<string | null>(null)
+
+  async function handleLifecycleAction(action: CandidateLifecycleAction) {
+    if (action === 'reject' && !lifecycleReason.trim()) {
+      setLifecycleError('Enter a reason before rejecting the candidate.')
+      return
+    }
+
+    setLifecycleBusy(true)
+    setLifecycleError(null)
+    setLifecycleNotice(null)
+    try {
+      await onLifecycleAction(action, lifecycleReason.trim())
+      setLifecycleReason('')
+      setLifecycleNotice(`${action[0].toUpperCase()}${action.slice(1)} action completed.`)
+    } catch (failure) {
+      setLifecycleError(getApiErrorMessage(failure, `Unable to ${action} the candidate.`))
+    } finally {
+      setLifecycleBusy(false)
+    }
+  }
 
   if (!run?.candidate) {
     return (
@@ -2430,6 +2491,7 @@ function ReviewStage({
   }
 
   const result = run.result
+  const lifecycleCandidate = candidateDetail?.candidate.uuid === run.candidate.uuid ? candidateDetail : null
   const summary = result.validation_summary
   const resolvedSelectedId = selectedPlacementId && result.assignments.some((assignment) => assignment.meeting_instance_id === selectedPlacementId)
     ? selectedPlacementId
@@ -2486,6 +2548,73 @@ function ReviewStage({
           {candidateError ? (
             <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">{candidateError}</p>
           ) : null}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="py-4">
+          <h2 className="text-sm font-semibold text-ink">Approval and publication</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Candidate version {lifecycleCandidate?.candidate.version ?? run.candidate.version} · status {lifecycleCandidate?.candidate.status ?? run.candidate.status}. Validate a revision first when one is active.
+          </p>
+        </CardHeader>
+        <CardBody className="space-y-3">
+          <TextAreaField
+            label="Reason"
+            rows={2}
+            maxLength={1000}
+            value={lifecycleReason}
+            onChange={(event) => setLifecycleReason(event.target.value)}
+            placeholder="Reason for review, approval, rejection, or publication"
+            disabled={lifecycleBusy}
+          />
+          {lifecycleError ? (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">{lifecycleError}</p>
+          ) : null}
+          {lifecycleNotice ? (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-800">{lifecycleNotice}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={lifecycleBusy || lifecycleCandidate === null || lifecycleCandidate.candidate.status !== 'generated'}
+              isLoading={lifecycleBusy}
+              onClick={() => void handleLifecycleAction('review')}
+            >
+              Submit for review
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={lifecycleBusy || lifecycleCandidate === null || lifecycleCandidate.candidate.status !== 'under_review'}
+              isLoading={lifecycleBusy}
+              onClick={() => void handleLifecycleAction('approve')}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={lifecycleBusy || lifecycleCandidate === null || !['generated', 'under_review'].includes(lifecycleCandidate.candidate.status)}
+              isLoading={lifecycleBusy}
+              onClick={() => void handleLifecycleAction('reject')}
+            >
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              disabled={lifecycleBusy || lifecycleCandidate === null || !['approved', 'published'].includes(lifecycleCandidate.candidate.status)}
+              isLoading={lifecycleBusy}
+              onClick={() => void handleLifecycleAction('publish')}
+              leftIcon={<Check className="size-4" aria-hidden="true" />}
+            >
+              Publish timetable
+            </Button>
+          </div>
+          <p className="text-[11px] leading-5 text-ink-muted">
+            Publication validates source freshness, replaces the active published timetable for this term, and preserves superseded records for attendance history.
+          </p>
         </CardBody>
       </Card>
 

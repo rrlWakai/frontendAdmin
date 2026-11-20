@@ -494,7 +494,7 @@ export function SchedulingPage() {
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-maroon-600">Published records</p>
         <h2 id="timetable-review-heading" className="mt-1 text-lg font-semibold text-ink">Timetable records</h2>
         <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-muted">
-          These are official schedule records. Candidate revisions above do not change these records, and no candidate is shown here until a separate authorized publishing workflow is implemented.
+          These are official schedule records. Publishing an approved candidate replaces the active timetable for this term and preserves superseded records for attendance history.
         </p>
       </section>
 

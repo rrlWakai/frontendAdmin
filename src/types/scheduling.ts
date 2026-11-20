@@ -1,6 +1,6 @@
 import type { AcademicPagination } from '@/types/academic'
 
-export type ScheduleStatus = 'draft' | 'published' | 'cancelled'
+export type ScheduleStatus = 'draft' | 'published' | 'superseded' | 'cancelled'
 export type ScheduleModality = 'face_to_face' | 'online' | 'hybrid'
 export type ScheduleType = 'lecture' | 'laboratory' | 'seminar' | 'other'
 
@@ -366,12 +366,23 @@ export interface SchedulingGenerationHistoryResponse {
   pagination: AcademicPagination
 }
 
+export type SchedulingCandidateStatus =
+  | 'generated'
+  | 'under_review'
+  | 'approved'
+  | 'rejected'
+  | 'published'
+
 export interface SchedulingCandidateRecord {
   uuid: string
   version: number
-  status: string
+  status: SchedulingCandidateStatus
   validation_status: string
   assignment_count: number
+  snapshot_sha256: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  published_at: string | null
 }
 
 export interface SchedulingSolveResult {
@@ -420,6 +431,7 @@ export type CandidateRevisionStatus =
 export type CandidateRevisionValidationStatus = 'valid' | 'invalid' | 'not_validated'
 
 export interface SchedulingCandidateRevisionSummary {
+  id: number
   uuid: string
   revision_number: number
   parent_revision_id: number | null
@@ -496,6 +508,40 @@ export interface TransitionCandidateRevisionInput {
   expected_version: number
   to_status: CandidateRevisionStatus
   reason: string
+}
+
+export interface SchedulingCandidateLifecycleInput {
+  expected_version: number
+  reason?: string
+}
+
+export interface TimetablePublicationRecord {
+  uuid: string
+  academic_term_id: number
+  candidate_uuid: string | null
+  publication_type: 'candidate' | 'manual' | 'legacy'
+  status: 'active' | 'superseded'
+  published_at: string | null
+  superseded_at: string | null
+  schedule_count: number
+}
+
+export interface SchedulingCandidateLifecycleResult {
+  candidate: SchedulingCandidateRecord
+  publication?: TimetablePublicationRecord
+  created_schedule_count?: number
+  superseded_schedule_count?: number
+  idempotent?: boolean
+}
+
+export interface CandidateStatusEvent {
+  id: number
+  from_status: SchedulingCandidateStatus | null
+  to_status: SchedulingCandidateStatus
+  actor_user_id: number | null
+  reason: string | null
+  metadata: Record<string, unknown>
+  created_at: string | null
 }
 
 export type SchedulingConfigurationStatus = 'draft' | 'approved' | 'superseded'
